@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rotas">
+<title>Otimizador de Rotas</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --bg:#14171C;
+    --surface:#1E232B;
+    --surface-2:#262C36;
+    --border:#313846;
+    --text:#F5F6F7;
+    --text-muted:#8B93A1;
+    --accent:#FF8C3B;
+    --accent-ink:#3A1F00;
+    --twoway:#4FD1C5;
+    --oneway:#F2545B;
+    --success:#34D399;
+    --danger:#F2545B;
+    --radius:14px;
+    --safe-top:env(safe-area-inset-top);
+    --safe-bottom:env(safe-area-inset-bottom);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%; margin:0; overscroll-behavior:none;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+    background:var(--bg); color:var(--text);
+    position:fixed; inset:0; width:100%; height:100%;
+  }
+  button{font-family:inherit;}
+  #map{position:fixed; inset:0; z-index:0; background:#0A0C0F;}
+
+  /* ---------- floating map controls ---------- */
+  #mode-switch{
+    position:fixed; left:50%; transform:translateX(-50%);
+    top:calc(var(--safe-top) + 12px); z-index:10;
+    background:rgba(30,35,43,0.92); backdrop-filter:blur(8px);
+    border:1px solid var(--border); border-radius:999px;
+    display:flex; padding:4px; gap:2px;
+  }
+  #mode-switch button{
+    border:none; background:transparent; color:var(--text-muted);
+    padding:8px 16px; border-radius:999px; font-size:14px; font-weight:600;
+  }
+  #mode-switch button.active{background:var(--accent); color:var(--accent-ink);}
+
+  #draw-banner{
+    position:fixed; left:12px; right:12px; z-index:10;
+    top:calc(var(--safe-top) + 60px);
+    background:rgba(30,35,43,0.95); border:1px solid var(--border);
+    border-radius:var(--radius); padding:12px 14px; display:none;
+  }
+  #draw-banner.show{display:block;}
+  #draw-banner p{margin:0 0 10px; font-size:14px; color:var(--text-muted); line-height:1.4;}
+  #draw-banner .row{display:flex; gap:8px;}
+  #draw-banner button{
+    flex:1; border:none; border-radius:10px; padding:10px; font-size:14px; font-weight:600;
+  }
+  .btn-primary{background:var(--accent); color:var(--accent-ink);}
+  .btn-ghost{background:var(--surface-2); color:var(--text);}
+  .btn-danger{background:transparent; color:var(--danger); border:1px solid var(--danger) !important;}
+
+  #locate-btn{
+    position:fixed; right:14px; z-index:10;
+    bottom:calc(var(--safe-bottom) + 84px);
+    width:44px; height:44px; border-radius:50%; border:1px solid var(--border);
+    background:rgba(30,35,43,0.92); color:var(--text); font-size:18px;
+  }
+  #layer-toggle{
+    position:fixed; right:14px; z-index:10;
+    bottom:calc(var(--safe-bottom) + 136px);
+    width:44px; height:44px; border-radius:50%; border:1px solid var(--border);
+    background:rgba(30,35,43,0.92); color:var(--text); font-size:17px;
+  }
+  #net-banner{
+    position:fixed; left:12px; right:12px; z-index:15;
+    top:calc(var(--safe-top) + 60px);
+    background:rgba(30,25,20,0.97); border:1px solid var(--oneway);
+    border-radius:var(--radius); padding:14px; display:none;
+  }
+  #net-banner.show{display:block;}
+  #net-banner p{margin:0 0 12px; font-size:13.5px; color:var(--text); line-height:1.5;}
+  #net-banner .row{display:flex; gap:8px;}
+  #net-banner button{flex:1; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:600;}
+
+  /* ---------- bottom tab bar ---------- */
+  #tabbar{
+    position:fixed; left:0; right:0; bottom:0; z-index:30;
+    display:flex; background:rgba(20,23,28,0.96); backdrop-filter:blur(10px);
+    border-top:1px solid var(--border);
+    padding-bottom:var(--safe-bottom);
+  }
+  #tabbar button{
+    flex:1; border:none; background:none; color:var(--text-muted);
+    padding:10px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px;
+    font-size:11px; font-weight:600;
+  }
+  #tabbar button svg{width:22px; height:22px;}
+  #tabbar button.active{color:var(--accent);}
+
+  /* ---------- full-screen panels ---------- */
+  .panel{
+    position:fixed; inset:0; z-index:20; background:var(--bg);
+    padding:calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 76px);
+    overflow-y:auto; display:none;
+  }
+  .panel.active{display:block;}
+  .panel h1{font-size:22px; margin:0 0 4px; font-weight:700; letter-spacing:-0.01em;}
+  .panel .sub{color:var(--text-muted); font-size:14px; margin:0 0 18px;}
+
+  input[type=text],input[type=number],select{
+    width:100%; background:var(--surface-2); border:1px solid var(--border);
+    color:var(--text); border-radius:10px; padding:12px 14px; font-size:16px; margin-bottom:12px;
+  }
+  label.field-label{display:block; font-size:13px; color:var(--text-muted); margin-bottom:6px; font-weight:600;}
+
+  .segmented{display:flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:14px;}
+  .segmented button{flex:1; padding:11px; border:none; background:var(--surface-2); color:var(--text-muted); font-size:14px; font-weight:600;}
+  .segmented button.on{background:var(--accent); color:var(--accent-ink);}
+
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:14px; margin-bottom:10px;
+  }
+  .card-row{display:flex; align-items:center; gap:12px;}
+  .card-row .grow{flex:1; min-width:0;}
+  .card-title{font-size:15px; font-weight:600; margin:0 0 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .card-meta{font-size:13px; color:var(--text-muted); margin:0;}
+  .badge{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap;}
+  .badge-twoway{background:rgba(79,209,197,0.15); color:var(--twoway);}
+  .badge-oneway{background:rgba(242,84,91,0.15); color:var(--oneway);}
+  .icon-btn{background:none; border:none; color:var(--text-muted); padding:6px; font-size:18px;}
+  .icon-btn.danger{color:var(--danger);}
+
+  .section-title{font-size:13px; text-transform:none; color:var(--text-muted); font-weight:700; margin:22px 0 10px;}
+  .section-title:first-child{margin-top:0;}
+
+  .empty{color:var(--text-muted); font-size:14px; padding:24px 4px; text-align:center;}
+
+  .checkrow{display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--border);}
+  .checkrow input{width:20px; height:20px; accent-color:var(--accent); flex:none;}
+
+  .sticky-cta{
+    position:fixed; left:16px; right:16px; bottom:calc(var(--safe-bottom) + 74px); z-index:25;
+    background:var(--accent); color:var(--accent-ink); border:none; border-radius:12px;
+    padding:14px; font-size:15px; font-weight:700; box-shadow:0 8px 20px rgba(0,0,0,0.35);
+  }
+  .sticky-cta:disabled{opacity:0.4;}
+
+  /* ---------- modal ---------- */
+  #modal-overlay{
+    position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.55);
+    display:none; align-items:flex-end;
+  }
+  #modal-overlay.show{display:flex;}
+  #modal-content{
+    background:var(--surface); border-radius:20px 20px 0 0; width:100%;
+    padding:18px 18px calc(var(--safe-bottom) + 18px); max-height:80vh; overflow-y:auto;
+  }
+  #modal-content h2{font-size:17px; margin:2px 0 16px;}
+  .modal-actions{display:flex; gap:10px; margin-top:6px;}
+  .modal-actions button{flex:1; border:none; border-radius:10px; padding:13px; font-size:15px; font-weight:700;}
+
+  .house-pin{
+    background:var(--accent); color:var(--accent-ink); font-size:11px; font-weight:800;
+    border-radius:6px; padding:2px 6px; border:2px solid #fff; white-space:nowrap;
+    transform:translate(-50%,-100%); box-shadow:0 2px 6px rgba(0,0,0,0.4);
+  }
+  .house-pin.done{background:var(--success);}
+  .street-arrow{color:var(--oneway); font-size:16px; transform:translate(-50%,-50%);}
+  .toast{
+    position:fixed; left:50%; transform:translateX(-50%); bottom:calc(var(--safe-bottom) + 90px);
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+    padding:10px 16px; border-radius:10px; font-size:13px; z-index:200; opacity:0; transition:opacity .25s;
+  }
+  .toast.show{opacity:1;}
+
+  .stop-card{border-left:3px solid var(--accent);}
+  .stop-card.done{border-left-color:var(--success); opacity:0.55;}
+  .stop-num{
+    width:26px; height:26px; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+    display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex:none;
+  }
+  .stop-card.done .stop-num{background:var(--success);}
+  a.maps-link{
+    display:block; text-align:center; background:var(--surface-2); color:var(--text);
+    border:1px solid var(--border); border-radius:10px; padding:11px; font-size:14px; font-weight:600;
+    text-decoration:none; margin-top:8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="mode-switch">
+  <button data-mode="view" class="active">Ver</button>
+  <button data-mode="street">Rua</button>
+  <button data-mode="house">Casa</button>
+</div>
+
+<div id="draw-banner">
+  <p id="draw-banner-text"></p>
+  <div class="row" id="draw-banner-actions"></div>
+</div>
+
+<button id="locate-btn">◎</button>
+<button id="layer-toggle" title="Alternar mapa">🛰️</button>
+
+<div id="net-banner">
+  <p id="net-banner-text">As imagens do mapa não carregaram. Isso costuma acontecer quando o arquivo é aberto numa pré-visualização sem internet liberada, em vez do Safari.</p>
+  <div class="row">
+    <button class="btn-ghost" id="net-banner-osm">Tentar mapa simples</button>
+    <button class="btn-primary" id="net-banner-close">Entendi</button>
+  </div>
+</div>
+
+<!-- LISTA PANEL -->
+<div class="panel" id="panel-lista">
+  <h1>Ruas &amp; casas</h1>
+  <p class="sub">Tudo que você já cadastrou andando pela cidade.</p>
+  <input type="text" id="search-input" placeholder="Buscar por número ou nome da rua">
+  <div id="list-streets"></div>
+  <div id="list-houses"></div>
+</div>
+
+<!-- ROTA PANEL -->
+<div class="panel" id="panel-rota">
+  <div id="rota-select-view">
+    <h1>Montar rota</h1>
+    <p class="sub">Escolha as casas que entram na entrega de hoje.</p>
+    <div id="rota-checklist"></div>
+  </div>
+  <div id="rota-result-view" style="display:none;">
+    <h1>Rota otimizada</h1>
+    <p class="sub" id="rota-summary"></p>
+    <div id="rota-warning" class="card" style="display:none; border-color:var(--oneway); color:var(--oneway); font-size:13px;"></div>
+    <div id="rota-stops"></div>
+  </div>
+</div>
+
+<button class="sticky-cta" id="rota-cta" style="display:none;"></button>
+
+<div id="tabbar">
+  <button data-tab="mapa" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3z"/><path d="M9 4v13M15 7v13"/></svg>
+    <span>Mapa</span>
+  </button>
+  <button data-tab="lista">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    <span>Ruas &amp; casas</span>
+  </button>
+  <button data-tab="rota">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4h-1"/></svg>
+    <span>Rota</span>
+  </button>
+</div>
+
+<div id="modal-overlay"><div id="modal-content"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   ESTADO
+============================================================ */
+var streets = [];   // {id, name, twoWay, points:[{lat,lng}...]}
+var houses  = [];   // {id, number, street, lat, lng}
+var routeState = null; // {selectedIds:[], order:[house ids], completed:[house ids], startPoint:{lat,lng}|null, active:bool}
+
+var mode = "view"; // view | street | house
+var drawingPoints = [];
+var drawingLayer = null;
+var drawingMarkers = [];
+
+var map, satLayer, labelLayer, osmLayer;
+var streetLayerGroup, houseLayerGroup, routeLineLayer;
+var userMarker = null;
+
+var hasStorage = !!(window.storage && window.storage.get);
+
+/* ============================================================
+   STORAGE
+============================================================ */
+async function safeGet(key, fallback){
+  if(!hasStorage) return fallback;
+  try{
+    var r = await window.storage.get(key, false);
+    return r ? JSON.parse(r.value) : fallback;
+  }catch(e){ return fallback; }
+}
+async function safeSet(key, value){
+  if(!hasStorage) return;
+  try{ await window.storage.set(key, JSON.stringify(value), false); }
+  catch(e){ console.error("storage set falhou", key, e); }
+}
+function saveStreets(){ safeSet("streets-v1", streets); }
+function saveHouses(){ safeSet("houses-v1", houses); }
+function saveRoute(){ safeSet("route-v1", routeState); }
+
+/* ============================================================
+   UTIL
+============================================================ */
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function haversine(a,b){
+  var R = 6371000;
+  var dLat = (b.lat-a.lat) * Math.PI/180;
+  var dLng = (b.lng-a.lng) * Math.PI/180;
+  var la1 = a.lat*Math.PI/180, la2 = b.lat*Math.PI/180;
+  var h = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));
+}
+
+// distância aproximada (metros) de um ponto a um segmento a-b, projeção equiretangular local
+function pointToSegmentDistance(p,a,b){
+  var lat0 = (a.lat+b.lat)/2;
+  var mPerDegLat = 111320;
+  var mPerDegLng = 111320*Math.cos(lat0*Math.PI/180);
+  var ax=0, ay=0;
+  var bx=(b.lng-a.lng)*mPerDegLng, by=(b.lat-a.lat)*mPerDegLat;
+  var px=(p.lng-a.lng)*mPerDegLng, py=(p.lat-a.lat)*mPerDegLat;
+  var abx=bx-ax, aby=by-ay;
+  var len2 = abx*abx+aby*aby;
+  var t = len2>0 ? ((px-ax)*abx+(py-ay)*aby)/len2 : 0;
+  t = Math.max(0,Math.min(1,t));
+  var cx=ax+abx*t, cy=ay+aby*t;
+  var dx=px-cx, dy=py-cy;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+
+function bearing(a,b){
+  var la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180;
+  var dLng=(b.lng-a.lng)*Math.PI/180;
+  var y=Math.sin(dLng)*Math.cos(la2);
+  var x=Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dLng);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+
+function fmtDist(m){
+  if(m<1000) return Math.round(m)+" m";
+  return (m/1000).toFixed(1)+" km";
+}
+function fmtTime(m){
+  var mins = Math.round(m/1000/18*60); // ~18km/h média urbana com paradas
+  if(mins<1) return "menos de 1 min";
+  if(mins<60) return mins+" min";
+  return Math.floor(mins/60)+"h"+String(mins%60).padStart(2,"0");
+}
+
+function showToast(msg){
+  var t=document.getElementById("toast");
+  t.textContent=msg;
+  t.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t=setTimeout(function(){t.classList.remove("show");},2600);
+}
+
+/* ============================================================
+   MODAL
+============================================================ */
+function openModal(html){
+  document.getElementById("modal-content").innerHTML = html;
+  document.getElementById("modal-overlay").classList.add("show");
+}
+function closeModal(){
+  document.getElementById("modal-overlay").classList.remove("show");
+  document.getElementById("modal-content").innerHTML = "";
+}
+document.getElementById("modal-overlay").addEventListener("click", function(e){
+  if(e.target.id==="modal-overlay") closeModal();
+});
+
+/* ============================================================
+   MAPA
+============================================================ */
+var baseKind = "sat"; // "sat" | "osm"
+var tileErrorCount = 0;
+var tileOkCount = 0;
+var netBannerShown = false;
+
+function makeSatLayer(){
+  var l = L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    {maxZoom:20, attribution:"Tiles &copy; Esri"}
+  );
+  l.on("tileerror", onTileError);
+  l.on("tileload", onTileOk);
+  return l;
+}
+function makeLabelLayer(){
+  return L.tileLayer(
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+    {maxZoom:20, pane:"overlayPane"}
+  );
+}
+function makeOsmLayer(){
+  var l = L.tileLayer(
+    "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {maxZoom:19, attribution:"&copy; OpenStreetMap contributors"}
+  );
+  l.on("tileerror", onTileError);
+  l.on("tileload", onTileOk);
+  return l;
+}
+function onTileError(){
+  tileErrorCount++;
+  // se muitos tiles falham logo no início e nenhum carregou com sucesso, provavelmente é bloqueio de rede na pré-visualização
+  if(tileErrorCount>=6 && tileOkCount===0 && !netBannerShown){
+    netBannerShown = true;
+    document.getElementById("net-banner").classList.add("show");
+  }
+}
+function onTileOk(){
+  tileOkCount++;
+}
+function setBaseLayer(kind){
+  if(satLayer && map.hasLayer(satLayer)) map.removeLayer(satLayer);
+  if(labelLayer && map.hasLayer(labelLayer)) map.removeLayer(labelLayer);
+  if(osmLayer && map.hasLayer(osmLayer)) map.removeLayer(osmLayer);
+  tileErrorCount = 0; tileOkCount = 0;
+  if(kind==="osm"){
+    if(!osmLayer) osmLayer = makeOsmLayer();
+    osmLayer.addTo(map);
+  } else {
+    if(!satLayer) satLayer = makeSatLayer();
+    if(!labelLayer) labelLayer = makeLabelLayer();
+    satLayer.addTo(map);
+    labelLayer.addTo(map);
+  }
+  baseKind = kind;
+  document.getElementById("layer-toggle").textContent = kind==="sat" ? "🛰️" : "🗺️";
+}
+
+function initMap(){
+  map = L.map("map", {zoomControl:false, attributionControl:true}).setView([-23.5505,-46.6333], 16);
+
+  setBaseLayer("sat");
+
+  streetLayerGroup = L.layerGroup().addTo(map);
+  houseLayerGroup = L.layerGroup().addTo(map);
+  routeLineLayer = L.layerGroup().addTo(map);
+
+  map.on("click", onMapClick);
+
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var ll=[pos.coords.latitude,pos.coords.longitude];
+      map.setView(ll,17);
+      placeUserMarker(ll);
+    }, function(){ /* silencioso: usa vista padrão */ }, {enableHighAccuracy:true, timeout:6000});
+  }
+}
+document.getElementById("layer-toggle").addEventListener("click", function(){
+  setBaseLayer(baseKind==="sat" ? "osm" : "sat");
+  showToast(baseKind==="sat" ? "Satélite" : "Mapa simples");
+});
+document.getElementById("net-banner-close").addEventListener("click", function(){
+  document.getElementById("net-banner").classList.remove("show");
+});
+document.getElementById("net-banner-osm").addEventListener("click", function(){
+  setBaseLayer("osm");
+  document.getElementById("net-banner").classList.remove("show");
+});
+function placeUserMarker(ll){
+  if(userMarker) map.removeLayer(userMarker);
+  userMarker = L.circleMarker(ll,{radius:7, color:"#fff", weight:2, fillColor:"#3B82F6", fillOpacity:1}).addTo(map);
+}
+document.getElementById("locate-btn").addEventListener("click", function(){
+  if(!navigator.geolocation) return showToast("Localização não disponível.");
+  navigator.geolocation.getCurrentPosition(function(pos){
+    var ll=[pos.coords.latitude,pos.coords.longitude];
+    map.setView(ll,17);
+    placeUserMarker(ll);
+  }, function(){ showToast("Não foi possível obter sua localização."); });
+});
+
+function onMapClick(e){
+  if(mode==="street"){
+    drawingPoints.push({lat:e.latlng.lat, lng:e.latlng.lng});
+    redrawDrawing();
+    updateDrawBanner();
+  } else if(mode==="house"){
+    openHouseForm(null, {lat:e.latlng.lat, lng:e.latlng.lng});
+  }
+}
+
+function redrawDrawing(){
+  if(drawingLayer) map.removeLayer(drawingLayer);
+  drawingMarkers.forEach(function(m){map.removeLayer(m);});
+  drawingMarkers=[];
+  if(drawingPoints.length===0) return;
+  drawingLayer = L.polyline(drawingPoints.map(function(p){return [p.lat,p.lng];}), {color:"#FF8C3B", weight:4, dashArray:"6,6"}).addTo(map);
+  drawingPoints.forEach(function(p,i){
+    var m = L.circleMarker([p.lat,p.lng],{radius:5, color:"#fff", weight:2, fillColor:"#FF8C3B", fillOpacity:1}).addTo(map);
+    drawingMarkers.push(m);
+  });
+}
+
+/* ============================================================
+   MODO
+============================================================ */
+document.querySelectorAll("#mode-switch button").forEach(function(btn){
+  btn.addEventListener("click", function(){
+    setMode(btn.dataset.mode);
+  });
+});
+function setMode(m){
+  if(mode==="street" && m!=="street") cancelDrawing();
+  mode = m;
+  document.querySelectorAll("#mode-switch button").forEach(function(b){
+    b.classList.toggle("active", b.dataset.mode===mode);
+  });
+  updateDrawBanner();
+}
+function updateDrawBanner(){
+  var banner = document.getElementById("draw-banner");
+  var text = document.getElementById("draw-banner-text");
+  var actions = document.getElementById("draw-banner-actions");
+  if(mode==="street"){
+    banner.classList.add("show");
+    text.textContent = drawingPoints.length<2
+      ? "Toque no mapa para marcar os pontos da rua, na ordem em que ela segue."
+      : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    actions.innerHTML="";
+    if(drawingPoints.length>0){
+      actions.appendChild(makeBtn("Desfazer ponto","btn-ghost",function(){
+        drawingPoints.pop(); redrawDrawing(); updateDrawBanner();
+      }));
+    }
+    if(drawingPoints.length>=2){
+      actions.appendChild(makeBtn("Concluir rua","btn-primary",finishStreetDrawing));
+    }
+    if(drawingPoints.length>0){
+      actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
+    }
+  } else if(mode==="house"){
+    banner.classList.add("show");
+    text.textContent = "Toque no mapa sobre a casa para cadastrar o número.";
+    actions.innerHTML="";
+  } else {
+    banner.classList.remove("show");
+  }
+}
+function makeBtn(label,cls,fn){
+  var b=document.createElement("button");
+  b.textContent=label; b.className=cls; b.addEventListener("click",fn);
+  return b;
+}
+function cancelDrawing(){
+  drawingPoints=[];
+  redrawDrawing();
+  updateDrawBanner();
+}
+function finishStreetDrawing(){
+  var pts = drawingPoints.slice();
+  openModal(
+    '<h2>Nova rua</h2>'+
+    '<label class="field-label">Nome da rua</label>'+
+    '<input type="text" id="f-street-name" placeholder="Ex: Rua das Flores">'+
+    '<label class="field-label">Sentido</label>'+
+    '<div class="segmented" id="f-street-dir">'+
+      '<button type="button" data-v="1" class="on">Mão dupla</button>'+
+      '<button type="button" data-v="0">Sentido único</button>'+
+    '</div>'+
+    '<p class="card-meta" style="margin-bottom:14px;">No sentido único, o trânsito segue na ordem em que você marcou os pontos no mapa.</p>'+
+    '<div class="modal-actions">'+
+      '<button class="btn-ghost" id="f-street-cancel">Cancelar</button>'+
+      '<button class="btn-primary" id="f-street-save">Salvar rua</button>'+
+    '</div>'
+  );
+  var twoWay = true;
+  document.querySelectorAll("#f-street-dir button").forEach(function(b){
+    b.addEventListener("click",function(){
+      document.querySelectorAll("#f-street-dir button").forEach(function(x){x.classList.remove("on");});
+      b.classList.add("on");
+      twoWay = b.dataset.v==="1";
+    });
+  });
+  document.getElementById("f-street-cancel").addEventListener("click", closeModal);
+  document.getElementById("f-street-save").addEventListener("click", function(){
+    var name = document.getElementById("f-street-name").value.trim();
+    if(!name){ showToast("Dê um nome para a rua."); return; }
+    streets.push({id:uid(), name:name, twoWay:twoWay, points:pts});
+    saveStreets();
+    drawingPoints=[]; redrawDrawing(); updateDrawBanner();
+    renderStreetsOnMap(); renderListaPanel();
+    closeModal();
+    showToast("Rua salva.");
+  });
+}
+
+/* ============================================================
+   CASAS
+============================================================ */
+function nearestStreetName(pt){
+  var best=null, bestD=Infinity;
+  streets.forEach(function(s){
+    for(var i=0;i<s.points.length-1;i++){
+      var d = pointToSegmentDistance(pt, s.points[i], s.points[i+1]);
+      if(d<bestD){ bestD=d; best=s.name; }
+    }
+  });
+  return bestD<60 ? best : null;
+}
+
+function openHouseForm(existing, pt){
+  var suggestion = existing ? existing.street : nearestStreetName(pt);
+  var options = streets.map(function(s){
+    return '<option value="'+escapeHtml(s.name)+'"'+(suggestion===s.name?" selected":"")+'>'+escapeHtml(s.name)+'</option>';
+  }).join("");
+  openModal(
+    '<h2>'+(existing?"Editar casa":"Nova casa")+'</h2>'+
+    '<label class="field-label">Número</label>'+
+    '<input type="text" id="f-house-number" placeholder="Ex: 245" value="'+(existing?escapeAttr(existing.number):"")+'" inputmode="numeric">'+
+    '<label class="field-label">Rua</label>'+
+    '<select id="f-house-street"><option value="">Sem rua vinculada</option>'+options+'</select>'+
+    '<div class="modal-actions">'+
+      '<button class="btn-ghost" id="f-house-cancel">Cancelar</button>'+
+      '<button class="btn-primary" id="f-house-save">Salvar</button>'+
+    '</div>'+
+    (existing ? '<button class="btn-danger" id="f-house-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir casa</button>' : '')
+  );
+  document.getElementById("f-house-cancel").addEventListener("click", closeModal);
+  document.getElementById("f-house-save").addEventListener("click", function(){
+    var number = document.getElementById("f-house-number").value.trim();
+    var street = document.getElementById("f-house-street").value;
+    if(!number){ showToast("Informe o número da casa."); return; }
+    if(existing){
+      existing.number=number; existing.street=street||null;
+    } else {
+      houses.push({id:uid(), number:number, street:street||null, lat:pt.lat, lng:pt.lng});
+    }
+    saveHouses();
+    renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
+    closeModal();
+    showToast("Casa salva.");
+  });
+  if(existing){
+    document.getElementById("f-house-delete").addEventListener("click", function(){
+      houses = houses.filter(function(h){return h.id!==existing.id;});
+      saveHouses();
+      renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
+      closeModal();
+      showToast("Casa excluída.");
+    });
+  }
+}
+
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function escapeAttr(s){ return escapeHtml(s); }
+
+/* ============================================================
+   RENDER NO MAPA
+============================================================ */
+function renderStreetsOnMap(){
+  streetLayerGroup.clearLayers();
+  streets.forEach(function(s){
+    var latlngs = s.points.map(function(p){return [p.lat,p.lng];});
+    var line = L.polyline(latlngs, {color: s.twoWay?"#4FD1C5":"#F2545B", weight:4, opacity:0.85}).addTo(streetLayerGroup);
+    line.on("click", function(ev){
+      L.DomEvent.stopPropagation(ev);
+      openStreetPopup(s);
+    });
+    if(!s.twoWay && s.points.length>=2){
+      var mid = Math.floor((s.points.length-1)/2);
+      var a=s.points[mid], b=s.points[mid+1];
+      var brg = bearing(a,b);
+      var midpt = [(a.lat+b.lat)/2, (a.lng+b.lng)/2];
+      var icon = L.divIcon({className:"", html:'<div class="street-arrow" style="transform:translate(-50%,-50%) rotate('+brg+'deg);">➜</div>', iconSize:[0,0]});
+      L.marker(midpt,{icon:icon, interactive:false}).addTo(streetLayerGroup);
+    }
+  });
+}
+function openStreetPopup(s){
+  openModal(
+    '<h2>'+escapeHtml(s.name)+'</h2>'+
+    '<p class="card-meta">'+(s.twoWay?"Mão dupla":"Sentido único")+' · '+s.points.length+' pontos · '+
+      houses.filter(function(h){return h.street===s.name;}).length+' casas vinculadas</p>'+
+    '<div class="modal-actions" style="margin-top:16px;">'+
+      '<button class="btn-ghost" id="st-close">Fechar</button>'+
+      '<button class="btn-danger" id="st-delete">Excluir rua</button>'+
+    '</div>'
+  );
+  document.getElementById("st-close").addEventListener("click", closeModal);
+  document.getElementById("st-delete").addEventListener("click", function(){
+    streets = streets.filter(function(x){return x.id!==s.id;});
+    saveStreets();
+    renderStreetsOnMap(); renderListaPanel(); renderRotaChecklist();
+    closeModal();
+    showToast("Rua excluída.");
+  });
+}
+
+function renderHousesOnMap(){
+  houseLayerGroup.clearLayers();
+  var doneSet = routeState && routeState.completed ? new Set(routeState.completed) : new Set();
+  houses.forEach(function(h){
+    var icon = L.divIcon({
+      className:"",
+      html:'<div class="house-pin'+(doneSet.has(h.id)?" done":"")+'">'+escapeHtml(h.number)+'</div>',
+      iconSize:[0,0]
+    });
+    var m = L.marker([h.lat,h.lng],{icon:icon}).addTo(houseLayerGroup);
+    m.on("click", function(ev){
+      L.DomEvent.stopPropagation(ev);
+      if(mode==="view") openHouseForm(h, {lat:h.lat,lng:h.lng});
+    });
+  });
+}
+
+/* ============================================================
+   ABAS
+============================================================ */
+document.querySelectorAll("#tabbar button").forEach(function(btn){
+  btn.addEventListener("click", function(){ setTab(btn.dataset.tab); });
+});
+function setTab(tab){
+  document.querySelectorAll("#tabbar button").forEach(function(b){b.classList.toggle("active", b.dataset.tab===tab);});
+  document.getElementById("panel-lista").classList.toggle("active", tab==="lista");
+  document.getElementById("panel-rota").classList.toggle("active", tab==="rota");
+  var showMapUI = tab==="mapa";
+  document.getElementById("mode-switch").style.display = showMapUI?"flex":"none";
+  document.getElementById("locate-btn").style.display = showMapUI?"block":"none";
+  document.getElementById("layer-toggle").style.display = showMapUI?"block":"none";
+  if(tab!=="mapa") document.getElementById("draw-banner").classList.remove("show");
+  document.getElementById("rota-cta").style.display = tab==="rota" ? "block" : "none";
+  if(tab==="rota") renderRotaChecklist();
+  if(tab==="mapa") setTimeout(function(){map.invalidateSize();},50);
+}
+
+/* ============================================================
+   PAINEL LISTA
+============================================================ */
+document.getElementById("search-input").addEventListener("input", renderListaPanel);
+function renderListaPanel(){
+  var q = document.getElementById("search-input").value.trim().toLowerCase();
+  var sHtml = "";
+  var filteredStreets = streets.filter(function(s){return s.name.toLowerCase().includes(q);});
+  if(streets.length===0){
+    sHtml = '<div class="section-title">Ruas</div><div class="empty">Nenhuma rua cadastrada ainda. Use o modo "Rua" no mapa.</div>';
+  } else {
+    sHtml = '<div class="section-title">Ruas ('+streets.length+')</div>';
+    filteredStreets.forEach(function(s){
+      sHtml += '<div class="card"><div class="card-row">'+
+        '<div class="grow"><p class="card-title">'+escapeHtml(s.name)+'</p>'+
+        '<p class="card-meta">'+houses.filter(function(h){return h.street===s.name;}).length+' casas</p></div>'+
+        '<span class="badge '+(s.twoWay?"badge-twoway":"badge-oneway")+'">'+(s.twoWay?"Mão dupla":"Sentido único")+'</span>'+
+        '<button class="icon-btn" data-locate-street="'+s.id+'">◎</button>'+
+        '</div></div>';
+    });
+  }
+  document.getElementById("list-streets").innerHTML = sHtml;
+
+  var hHtml = "";
+  var filteredHouses = houses.filter(function(h){
+    return h.number.toLowerCase().includes(q) || (h.street||"").toLowerCase().includes(q);
+  });
+  if(houses.length===0){
+    hHtml = '<div class="section-title">Casas</div><div class="empty">Nenhuma casa cadastrada ainda. Use o modo "Casa" no mapa.</div>';
+  } else {
+    hHtml = '<div class="section-title">Casas ('+houses.length+')</div>';
+    filteredHouses.forEach(function(h){
+      hHtml += '<div class="card"><div class="card-row">'+
+        '<div class="grow"><p class="card-title">Nº '+escapeHtml(h.number)+'</p>'+
+        '<p class="card-meta">'+(h.street?escapeHtml(h.street):"sem rua vinculada")+'</p></div>'+
+        '<button class="icon-btn" data-locate-house="'+h.id+'">◎</button>'+
+        '<button class="icon-btn danger" data-delete-house="'+h.id+'">✕</button>'+
+        '</div></div>';
+    });
+  }
+  document.getElementById("list-houses").innerHTML = hHtml;
+
+  document.querySelectorAll("[data-locate-street]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var s = streets.find(function(x){return x.id===b.dataset.locateStreet;});
+      if(s){ setTab("mapa"); document.querySelector('[data-tab="mapa"]').classList.add("active");
+        map.fitBounds(s.points.map(function(p){return [p.lat,p.lng];}), {padding:[60,60]}); }
+    });
+  });
+  document.querySelectorAll("[data-locate-house]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var h = houses.find(function(x){return x.id===b.dataset.locateHouse;});
+      if(h){ setTab("mapa"); map.setView([h.lat,h.lng],18); }
+    });
+  });
+  document.querySelectorAll("[data-delete-house]").forEach(function(b){
+    b.addEventListener("click", function(){
+      houses = houses.filter(function(x){return x.id!==b.dataset.deleteHouse;});
+      saveHouses(); renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
+      showToast("Casa excluída.");
+    });
+  });
+}
+
+/* ============================================================
+   ROTA — seleção
+============================================================ */
+function renderRotaChecklist(){
+  var wrap = document.getElementById("rota-checklist");
+  if(houses.length===0){
+    wrap.innerHTML = '<div class="empty">Cadastre casas no mapa antes de montar uma rota.</div>';
+    updateRotaCta(); return;
+  }
+  var byStreet = {};
+  houses.forEach(function(h){
+    var key = h.street || "Sem rua vinculada";
+    (byStreet[key]=byStreet[key]||[]).push(h);
+  });
+  var html="";
+  Object.keys(byStreet).sort().forEach(function(key){
+    html += '<div class="section-title">'+escapeHtml(key)+'</div>';
+    byStreet[key].forEach(function(h){
+      var checked = routeState && routeState.selectedIds && routeState.selectedIds.includes(h.id);
+      html += '<label class="checkrow"><input type="checkbox" data-house-check="'+h.id+'" '+(checked?"checked":"")+'>Nº '+escapeHtml(h.number)+'</label>';
+    });
+  });
+  wrap.innerHTML = html;
+  document.querySelectorAll("[data-house-check]").forEach(function(cb){
+    cb.addEventListener("change", updateRotaCta);
+  });
+  updateRotaCta();
+}
+function getSelectedIds(){
+  return Array.from(document.querySelectorAll("[data-house-check]:checked")).map(function(cb){return cb.dataset.houseCheck;});
+}
+function updateRotaCta(){
+  var cta = document.getElementById("rota-cta");
+  var selecting = document.getElementById("rota-select-view").style.display!=="none";
+  if(selecting){
+    var n = getSelectedIds().length;
+    cta.textContent = n>=2 ? "Otimizar rota ("+n+" paradas)" : "Selecione ao menos 2 casas";
+    cta.disabled = n<2;
+    cta.onclick = computeRoute;
+  }
+}
+
+/* ============================================================
+   GRAFO + DIJKSTRA + TSP
+============================================================ */
+function buildGraph(){
+  var nodes = []; // {lat,lng}
+  var adj = [];   // adj[i] = [{to,dist}]
+  var keyIndex = {};
+  function getNodeId(pt){
+    var k = pt.lat.toFixed(5)+","+pt.lng.toFixed(5);
+    if(keyIndex[k]===undefined){
+      keyIndex[k]=nodes.length;
+      nodes.push({lat:pt.lat,lng:pt.lng});
+      adj.push([]);
+    }
+    return keyIndex[k];
+  }
+  function addEdge(a,b,d,bidir){
+    adj[a].push({to:b,dist:d});
+    if(bidir) adj[b].push({to:a,dist:d});
+  }
+  streets.forEach(function(s){
+    for(var i=0;i<s.points.length-1;i++){
+      var a=s.points[i], b=s.points[i+1];
+      var ia=getNodeId(a), ib=getNodeId(b);
+      addEdge(ia,ib,haversine(a,b), s.twoWay);
+    }
+  });
+  var houseNodeId = {};
+  houses.forEach(function(h){
+    var best=null, bestD=Infinity;
+    streets.forEach(function(s){
+      for(var i=0;i<s.points.length-1;i++){
+        var d = pointToSegmentDistance(h, s.points[i], s.points[i+1]);
+        if(d<bestD){ bestD=d; best={a:s.points[i], b:s.points[i+1]}; }
+      }
+    });
+    var id = nodes.length;
+    nodes.push({lat:h.lat,lng:h.lng});
+    adj.push([]);
+    if(best){
+      var ia=getNodeId(best.a), ib=getNodeId(best.b);
+      addEdge(id, ia, haversine(h,best.a), true);
+      addEdge(id, ib, haversine(h,best.b), true);
+    }
+    houseNodeId[h.id]=id;
+  });
+  return {nodes:nodes, adj:adj, houseNodeId:houseNodeId, addStartNode:function(pt){
+    var id = nodes.length;
+    nodes.push({lat:pt.lat,lng:pt.lng});
+    adj.push([]);
+    var best=null, bestD=Infinity;
+    streets.forEach(function(s){
+      for(var i=0;i<s.points.length-1;i++){
+        var d = pointToSegmentDistance(pt, s.points[i], s.points[i+1]);
+        if(d<bestD){ bestD=d; best={a:s.points[i], b:s.points[i+1]}; }
+      }
+    });
+    if(best){
+      var ia=getNodeId(best.a), ib=getNodeId(best.b);
+      addEdge(id, ia, haversine(pt,best.a), true);
+      addEdge(id, ib, haversine(pt,best.b), true);
+    }
+    return id;
+  }};
+}
+
+function dijkstra(adj, sourceId){
+  var n = adj.length;
+  var dist = new Array(n).fill(Infinity);
+  var visited = new Array(n).fill(false);
+  dist[sourceId]=0;
+  for(var iter=0; iter<n; iter++){
+    var u=-1, best=Infinity;
+    for(var i=0;i<n;i++){ if(!visited[i] && dist[i]<best){ best=dist[i]; u=i; } }
+    if(u===-1) break;
+    visited[u]=true;
+    adj[u].forEach(function(e){
+      if(dist[u]+e.dist < dist[e.to]) dist[e.to]=dist[u]+e.dist;
+    });
+  }
+  return dist;
+}
+
+function nearestNeighborTour(matrix, n, startIdx){
+  var visited = new Array(n).fill(false);
+  var tour = [startIdx];
+  visited[startIdx]=true;
+  for(var step=1; step<n; step++){
+    var cur = tour[tour.length-1];
+    var best=-1, bestD=Infinity;
+    for(var j=0;j<n;j++){
+      if(!visited[j] && matrix[cur][j]<bestD){ bestD=matrix[cur][j]; best=j; }
+    }
+    if(best===-1) break;
+    visited[best]=true;
+    tour.push(best);
+  }
+  return tour;
+}
+function tourCost(tour, matrix){
+  var c=0;
+  for(var i=0;i<tour.length-1;i++) c+=matrix[tour[i]][tour[i+1]];
+  return c;
+}
+function twoOptImprove(tour, matrix){
+  var improved=true, guard=0;
+  while(improved && guard<300){
+    improved=false; guard++;
+    for(var i=1;i<tour.length-2;i++){
+      for(var k=i+1;k<tour.length-1;k++){
+        var newTour = tour.slice(0,i).concat(tour.slice(i,k+1).reverse(), tour.slice(k+1));
+        if(tourCost(newTour,matrix) < tourCost(tour,matrix) - 0.5){
+          tour = newTour; improved=true;
+        }
+      }
+    }
+  }
+  return tour;
+}
+
+function computeRoute(){
+  var ids = getSelectedIds();
+  if(ids.length<2) return;
+  var selectedHouses = houses.filter(function(h){return ids.includes(h.id);});
+
+  var warning = "";
+  var order, totalDist;
+  try{
+    var g = buildGraph();
+    var startPt = userMarker ? userMarker.getLatLng() : {lat:selectedHouses[0].lat,lng:selectedHouses[0].lng};
+    var startNode = g.addStartNode({lat:startPt.lat,lng:startPt.lng});
+    var nodeList = [startNode].concat(selectedHouses.map(function(h){return g.houseNodeId[h.id];}));
+    var n = nodeList.length;
+    var matrix = [];
+    var unreachable = false;
+    for(var i=0;i<n;i++){
+      var dist = dijkstra(g.adj, nodeList[i]);
+      matrix.push(nodeList.map(function(nid){
+        var d = dist[nid];
+        if(!isFinite(d)){ unreachable=true; return haversine(g.nodes[nodeList[i]], g.nodes[nid])*3; }
+        return d;
+      }));
+    }
+    if(unreachable) warning = "Algumas casas ainda não estão conectadas por ruas cadastradas — a rota usa uma estimativa em linha reta para esses trechos. Cadastre as ruas que faltam para melhorar a precisão.";
+    if(streets.length===0) warning = "Nenhuma rua cadastrada ainda: a ordem foi calculada em linha reta entre as casas. Cadastre as ruas para respeitar sentidos e melhorar a rota.";
+
+    var tour = nearestNeighborTour(matrix, n, 0);
+    tour = twoOptImprove(tour, matrix);
+    totalDist = tourCost(tour, matrix);
+    order = tour.slice(1).map(function(idx){ return selectedHouses[idx-1]; });
+  }catch(err){
+    console.error(err);
+    warning = "Não foi possível usar o mapa de ruas para calcular a rota; foi usada distância em linha reta.";
+    var pts = selectedHouses.map(function(h){return {lat:h.lat,lng:h.lng};});
+    var refPt = userMarker ? userMarker.getLatLng() : pts[0];
+    var mat=[];
+    var all=[{lat:refPt.lat,lng:refPt.lng}].concat(pts);
+    for(var a=0;a<all.length;a++){ mat.push(all.map(function(p){return haversine(all[a],p);})); }
+    var t = nearestNeighborTour(mat, all.length, 0);
+    t = twoOptImprove(t, mat);
+    totalDist = tourCost(t, mat);
+    order = t.slice(1).map(function(idx){return selectedHouses[idx-1];});
+  }
+
+  routeState = {
+    selectedIds: ids,
+    order: order.map(function(h){return h.id;}),
+    completed: [],
+    active: false
+  };
+  saveRoute();
+  showRouteResult(order, totalDist, warning);
+}
+
+function showRouteResult(order, totalDist, warning){
+  document.getElementById("rota-select-view").style.display="none";
+  document.getElementById("rota-result-view").style.display="block";
+  document.getElementById("rota-summary").textContent =
+    order.length+" paradas · "+fmtDist(totalDist)+" · aprox. "+fmtTime(totalDist);
+  var warnEl = document.getElementById("rota-warning");
+  if(warning){ warnEl.style.display="block"; warnEl.textContent=warning; } else { warnEl.style.display="none"; }
+
+  var wrap = document.getElementById("rota-stops");
+  wrap.innerHTML = order.map(function(h,i){
+    return '<div class="card"><div class="card-row">'+
+      '<div class="stop-num">'+(i+1)+'</div>'+
+      '<div class="grow"><p class="card-title">Nº '+escapeHtml(h.number)+'</p>'+
+      '<p class="card-meta">'+(h.street?escapeHtml(h.street):"")+'</p></div>'+
+      '</div></div>';
+  }).join("");
+
+  drawRouteLine(order);
+
+  var cta = document.getElementById("rota-cta");
+  cta.textContent = "Iniciar rota";
+  cta.disabled=false;
+  cta.onclick = startRouteExecution;
+
+  wrap.insertAdjacentHTML("beforeend",'<button class="btn-ghost" id="rota-redo" style="width:100%;border:none;border-radius:10px;padding:12px;margin-top:4px;">Refazer seleção</button>');
+  document.getElementById("rota-redo").addEventListener("click", function(){
+    document.getElementById("rota-select-view").style.display="block";
+    document.getElementById("rota-result-view").style.display="none";
+    updateRotaCta();
+  });
+}
+
+function drawRouteLine(order){
+  routeLineLayer.clearLayers();
+  var pts = order.map(function(h){return [h.lat,h.lng];});
+  if(userMarker){ pts = [[userMarker.getLatLng().lat, userMarker.getLatLng().lng]].concat(pts); }
+  if(pts.length>1) L.polyline(pts, {color:"#FF8C3B", weight:4, opacity:0.9, dashArray:"1,10", lineCap:"round"}).addTo(routeLineLayer);
+}
+
+/* ============================================================
+   ROTA — execução
+============================================================ */
+function startRouteExecution(){
+  routeState.active = true;
+  saveRoute();
+  setTab("mapa");
+  document.querySelector('[data-tab="mapa"]').classList.add("active");
+  renderExecutionOnMap();
+}
+function currentStop(){
+  if(!routeState) return null;
+  var remaining = routeState.order.filter(function(id){return !routeState.completed.includes(id);});
+  if(remaining.length===0) return null;
+  return houses.find(function(h){return h.id===remaining[0];});
+}
+function renderExecutionOnMap(){
+  var stop = currentStop();
+  renderHousesOnMap();
+  if(!stop){
+    showToast("Rota concluída! 🎉");
+    routeState.active=false; saveRoute();
+    return;
+  }
+  map.setView([stop.lat,stop.lng],17);
+  var url = "https://maps.apple.com/?daddr="+stop.lat+","+stop.lng+"&dirflg=d";
+  openModal(
+    '<h2>Parada atual: nº '+escapeHtml(stop.number)+'</h2>'+
+    '<p class="card-meta">'+(stop.street?escapeHtml(stop.street):"")+'</p>'+
+    '<a class="maps-link" href="'+url+'" target="_blank" rel="noopener">Abrir no Apple Maps</a>'+
+    '<div class="modal-actions" style="margin-top:14px;">'+
+      '<button class="btn-ghost" id="ex-close">Ver no mapa</button>'+
+      '<button class="btn-primary" id="ex-done">Marcar como entregue</button>'+
+    '</div>'+
+    '<button class="btn-danger" id="ex-stop" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Encerrar rota</button>'
+  );
+  document.getElementById("ex-close").addEventListener("click", closeModal);
+  document.getElementById("ex-done").addEventListener("click", function(){
+    routeState.completed.push(stop.id);
+    saveRoute();
+    closeModal();
+    renderExecutionOnMap();
+  });
+  document.getElementById("ex-stop").addEventListener("click", function(){
+    routeState.active=false;
+    saveRoute();
+    closeModal();
+    renderHousesOnMap();
+  });
+}
+
+/* ============================================================
+   INIT
+============================================================ */
+async function init(){
+  initMap();
+  streets = await safeGet("streets-v1", []);
+  houses = await safeGet("houses-v1", []);
+  routeState = await safeGet("route-v1", null);
+  renderStreetsOnMap();
+  renderHousesOnMap();
+  renderListaPanel();
+  renderRotaChecklist();
+  if(!hasStorage) showToast("Aviso: este visualizador não salva dados entre sessões.");
+  if(routeState && routeState.active && currentStop()){
+    setTimeout(function(){
+      document.getElementById("rota-select-view").style.display="none";
+      document.getElementById("rota-result-view").style.display="block";
+      var order = routeState.order.map(function(id){return houses.find(function(h){return h.id===id;});}).filter(Boolean);
+      var totalDist = 0;
+      showRouteResult(order, totalDist, "");
+      renderExecutionOnMap();
+    }, 300);
+  }
+}
+init();
+
+})();
+</script>
+</body>
+</html>
