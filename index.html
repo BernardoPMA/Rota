@@ -10,73 +10,41 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <style>
   :root{
-    --bg:#14171C;
-    --surface:#1E232B;
-    --surface-2:#262C36;
-    --border:#313846;
-    --text:#F5F6F7;
-    --text-muted:#8B93A1;
-    --accent:#A855F7;
-    --accent-ink:#FFFFFF;
-    --route:#A855F7;
-    --route-ink:#FFFFFF;
-    --twoway:#67E8F9;
-    --oneway:#FB7185;
-    --success:#34D399;
-    --danger:#FB7185;
-    --label-bg:rgba(30,35,43,0.9);
-    --label-text:#F5F6F7;
-    --radius:14px;
-    --safe-top:env(safe-area-inset-top);
-    --safe-bottom:env(safe-area-inset-bottom);
+    --bg:#14171C; --surface:#1E232B; --surface-2:#262C36; --border:#313846;
+    --text:#F5F6F7; --text-muted:#8B93A1;
+    --accent:#A855F7; --accent-ink:#FFFFFF;
+    --route:#A855F7; --route-ink:#FFFFFF;
+    --twoway:#67E8F9; --oneway:#FB7185; --bairro:#FBBF24;
+    --success:#34D399; --danger:#FB7185;
+    --label-bg:rgba(30,35,43,0.92); --label-text:#F5F6F7;
+    --radius:14px; --safe-top:env(safe-area-inset-top); --safe-bottom:env(safe-area-inset-bottom);
   }
   body.light{
-    --bg:#F3F4F6;
-    --surface:#FFFFFF;
-    --surface-2:#EEF0F3;
-    --border:#D9DCE3;
-    --text:#12141A;
-    --text-muted:#5B6270;
-    --accent:#7C3AED;
-    --accent-ink:#FFFFFF;
-    --route:#7C3AED;
-    --route-ink:#FFFFFF;
-    --twoway:#0E7490;
-    --oneway:#DC2626;
-    --success:#059669;
-    --danger:#DC2626;
-    --label-bg:rgba(255,255,255,0.94);
-    --label-text:#12141A;
+    --bg:#F3F4F6; --surface:#FFFFFF; --surface-2:#EEF0F3; --border:#D9DCE3;
+    --text:#12141A; --text-muted:#5B6270;
+    --accent:#7C3AED; --accent-ink:#FFFFFF;
+    --route:#7C3AED; --route-ink:#FFFFFF;
+    --twoway:#0E7490; --oneway:#DC2626; --bairro:#B45309;
+    --success:#059669; --danger:#DC2626;
+    --label-bg:rgba(255,255,255,0.95); --label-text:#12141A;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%; margin:0; overscroll-behavior:none;}
-  body{
-    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
-    background:var(--bg); color:var(--text);
-    position:fixed; inset:0; width:100%; height:100%;
-  }
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif; background:var(--bg); color:var(--text); position:fixed; inset:0; width:100%; height:100%;}
   button{font-family:inherit;}
   #map{position:fixed; inset:0; z-index:0; background:#0A0C0F;}
+  /* mapa base invertido no modo escuro (a fonte OSM só existe em versão clara) */
+  body:not(.light) .leaflet-tile-pane{ filter:invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.92) saturate(0.75); }
 
   #mode-switch{
-    position:fixed; left:50%; transform:translateX(-50%);
-    top:calc(var(--safe-top) + 12px); z-index:10;
-    background:rgba(30,35,43,0.92); backdrop-filter:blur(8px);
-    border:1px solid var(--border); border-radius:999px;
-    display:flex; padding:4px; gap:2px; max-width:94vw;
+    position:fixed; left:50%; transform:translateX(-50%); top:calc(var(--safe-top) + 12px); z-index:10;
+    background:rgba(30,35,43,0.92); backdrop-filter:blur(8px); border:1px solid var(--border); border-radius:999px;
+    display:flex; padding:4px; gap:1px; max-width:96vw; overflow-x:auto;
   }
-  #mode-switch button{
-    border:none; background:transparent; color:var(--text-muted);
-    padding:8px 12px; border-radius:999px; font-size:13px; font-weight:600; white-space:nowrap;
-  }
+  #mode-switch button{border:none; background:transparent; color:var(--text-muted); padding:7px 10px; border-radius:999px; font-size:12.5px; font-weight:600; white-space:nowrap;}
   #mode-switch button.active{background:var(--accent); color:var(--accent-ink);}
 
-  #draw-banner{
-    position:fixed; left:12px; right:12px; z-index:10;
-    top:calc(var(--safe-top) + 60px);
-    background:rgba(30,35,43,0.95); border:1px solid var(--border);
-    border-radius:var(--radius); padding:12px 14px; display:none;
-  }
+  #draw-banner{position:fixed; left:12px; right:12px; z-index:10; top:calc(var(--safe-top) + 60px); background:rgba(30,35,43,0.95); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; display:none;}
   #draw-banner.show{display:block;}
   #draw-banner p{margin:0 0 10px; font-size:14px; color:var(--text-muted); line-height:1.4;}
   #draw-banner .row{display:flex; gap:8px;}
@@ -85,58 +53,26 @@
   .btn-ghost{background:var(--surface-2); color:var(--text);}
   .btn-danger{background:transparent; color:var(--danger); border:1px solid var(--danger) !important;}
 
-  #locate-btn{
-    position:fixed; right:14px; z-index:10;
-    bottom:calc(var(--safe-bottom) + 84px);
-    width:44px; height:44px; border-radius:50%; border:1px solid var(--border);
-    background:rgba(30,35,43,0.92); color:var(--text); font-size:18px;
-  }
-  #theme-toggle{
-    position:fixed; right:14px; z-index:10;
-    bottom:calc(var(--safe-bottom) + 136px);
-    width:44px; height:44px; border-radius:50%; border:1px solid var(--border);
-    background:rgba(30,35,43,0.92); color:var(--text); font-size:17px;
-  }
-  #net-banner{
-    position:fixed; left:12px; right:12px; z-index:15;
-    top:calc(var(--safe-top) + 60px);
-    background:rgba(30,25,20,0.97); border:1px solid var(--oneway);
-    border-radius:var(--radius); padding:14px; display:none;
-  }
+  #locate-btn{position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 84px); width:44px; height:44px; border-radius:50%; border:1px solid var(--border); background:rgba(30,35,43,0.92); color:var(--text); font-size:18px;}
+  #theme-toggle{position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 136px); width:44px; height:44px; border-radius:50%; border:1px solid var(--border); background:rgba(30,35,43,0.92); color:var(--text); font-size:17px;}
+  #net-banner{position:fixed; left:12px; right:12px; z-index:15; top:calc(var(--safe-top) + 60px); background:rgba(30,25,20,0.97); border:1px solid var(--oneway); border-radius:var(--radius); padding:14px; display:none;}
   #net-banner.show{display:block;}
   #net-banner p{margin:0 0 12px; font-size:13.5px; color:var(--text); line-height:1.5;}
   #net-banner button{width:100%; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:600; background:var(--accent); color:var(--accent-ink);}
 
-  #tabbar{
-    position:fixed; left:0; right:0; bottom:0; z-index:30;
-    display:flex; background:rgba(20,23,28,0.96); backdrop-filter:blur(10px);
-    border-top:1px solid var(--border);
-    padding-bottom:var(--safe-bottom);
-  }
+  #tabbar{position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; background:rgba(20,23,28,0.96); backdrop-filter:blur(10px); border-top:1px solid var(--border); padding-bottom:var(--safe-bottom);}
   body.light #tabbar{background:rgba(255,255,255,0.96);}
-  #tabbar button{
-    flex:1; border:none; background:none; color:var(--text-muted);
-    padding:10px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px;
-    font-size:11px; font-weight:600;
-  }
+  #tabbar button{flex:1; border:none; background:none; color:var(--text-muted); padding:10px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; font-weight:600;}
   #tabbar button svg{width:22px; height:22px;}
   #tabbar button.active{color:var(--accent);}
 
-  .panel{
-    position:fixed; inset:0; z-index:20; background:var(--bg);
-    padding:calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 76px);
-    overflow-y:auto; display:none;
-  }
+  .panel{position:fixed; inset:0; z-index:20; background:var(--bg); padding:calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 76px); overflow-y:auto; display:none;}
   .panel.active{display:block;}
   .panel h1{font-size:22px; margin:0 0 4px; font-weight:700; letter-spacing:-0.01em;}
   .panel .sub{color:var(--text-muted); font-size:14px; margin:0 0 18px;}
 
-  input[type=text],input[type=number],select{
-    width:100%; background:var(--surface-2); border:1px solid var(--border);
-    color:var(--text); border-radius:10px; padding:12px 14px; font-size:16px; margin-bottom:12px;
-  }
+  input[type=text],input[type=number],select{width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:12px 14px; font-size:16px; margin-bottom:12px;}
   label.field-label{display:block; font-size:13px; color:var(--text-muted); margin-bottom:6px; font-weight:600;}
-
   .segmented{display:flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:14px;}
   .segmented button{flex:1; padding:11px; border:none; background:var(--surface-2); color:var(--text-muted); font-size:14px; font-weight:600;}
   .segmented button.on{background:var(--accent); color:var(--accent-ink);}
@@ -151,37 +87,23 @@
   .badge-oneway{background:rgba(251,113,133,0.15); color:var(--oneway);}
   .icon-btn{background:none; border:none; color:var(--text-muted); padding:6px; font-size:18px;}
   .icon-btn.danger{color:var(--danger);}
-
   .section-title{font-size:13px; color:var(--text-muted); font-weight:700; margin:22px 0 10px;}
   .section-title:first-child{margin-top:0;}
   .empty{color:var(--text-muted); font-size:14px; padding:24px 4px; text-align:center;}
-
   .checkrow{display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--border);}
   .checkrow input{width:20px; height:20px; accent-color:var(--route); flex:none;}
 
-  .sticky-cta{
-    position:fixed; left:16px; right:16px; bottom:calc(var(--safe-bottom) + 74px); z-index:25;
-    background:var(--accent); color:var(--accent-ink); border:none; border-radius:12px;
-    padding:14px; font-size:15px; font-weight:700; box-shadow:0 8px 20px rgba(0,0,0,0.35);
-  }
+  .sticky-cta{position:fixed; left:16px; right:16px; bottom:calc(var(--safe-bottom) + 74px); z-index:25; background:var(--accent); color:var(--accent-ink); border:none; border-radius:12px; padding:14px; font-size:15px; font-weight:700; box-shadow:0 8px 20px rgba(0,0,0,0.35);}
   .sticky-cta:disabled{opacity:0.4;}
 
-  #exec-bar{
-    position:fixed; left:12px; right:12px; z-index:25;
-    bottom:calc(var(--safe-bottom) + 74px);
-    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-    padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:none;
-  }
+  #exec-bar{position:fixed; left:12px; right:12px; z-index:25; bottom:calc(var(--safe-bottom) + 74px); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:none;}
   #exec-bar.show{display:block;}
   #exec-bar .exec-row{display:flex; align-items:center; gap:10px;}
   #exec-bar .exec-label{font-size:11px; color:var(--route); font-weight:700; margin:0 0 2px; text-transform:uppercase; letter-spacing:0.03em;}
   #exec-bar .exec-title{font-size:16px; font-weight:700; margin:0;}
   #exec-bar .exec-sub{font-size:12px; color:var(--text-muted); margin:0;}
   #exec-bar button{border:none; border-radius:10px; padding:11px 16px; font-size:14px; font-weight:700; flex:none;}
-  #exec-stop-route{
-    width:100%; margin-top:10px; background:none; color:var(--danger); border:1px solid var(--danger) !important;
-    padding:9px; font-size:12.5px; font-weight:600;
-  }
+  #exec-stop-route{width:100%; margin-top:10px; background:none; color:var(--danger); border:1px solid var(--danger) !important; padding:9px; font-size:12.5px; font-weight:600;}
 
   #modal-overlay{position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.55); display:none; align-items:flex-end;}
   #modal-overlay.show{display:flex;}
@@ -190,47 +112,33 @@
   .modal-actions{display:flex; gap:10px; margin-top:6px;}
   .modal-actions button{flex:1; border:none; border-radius:10px; padding:13px; font-size:15px; font-weight:700;}
 
-  .house-pin{
-    background:var(--route); color:var(--route-ink); font-size:11px; font-weight:800;
-    border-radius:6px; padding:2px 6px; border:2px solid #fff; white-space:nowrap;
-    box-shadow:0 2px 6px rgba(0,0,0,0.4);
-  }
+  .house-pin{display:inline-block; background:var(--route); color:var(--route-ink); font-size:11px; font-weight:800; border-radius:6px; padding:2px 7px; border:2px solid #fff; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.4); width:max-content;}
   .house-pin.done{background:var(--success);}
   .house-pin.next-stop{outline:3px solid var(--accent); animation:pulse 1.4s infinite;}
-  @keyframes pulse{
-    0%{box-shadow:0 0 0 0 rgba(168,85,247,0.55);}
-    70%{box-shadow:0 0 0 9px rgba(168,85,247,0);}
-    100%{box-shadow:0 0 0 0 rgba(168,85,247,0);}
-  }
-  .street-label{
-    font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; white-space:nowrap;
-    box-shadow:0 1px 4px rgba(0,0,0,0.35); background:var(--label-bg); color:var(--label-text);
-    border:1.5px solid transparent;
-  }
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(168,85,247,0.55);} 70%{box-shadow:0 0 0 9px rgba(168,85,247,0);} 100%{box-shadow:0 0 0 0 rgba(168,85,247,0);}}
+  .street-label{display:inline-block; width:max-content; font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.35); background:var(--label-bg); color:var(--label-text); border:1.5px solid transparent;}
   .street-label.label-oneway{border-color:var(--oneway);}
   .street-label.label-twoway{border-color:var(--twoway);}
   .street-label.next-stop{outline:2px solid var(--accent);}
+  .street-chevron{font-size:15px; font-weight:900; color:var(--oneway); filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));}
+  .bairro-label{display:inline-block; width:max-content; font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; white-space:nowrap; background:var(--bairro); color:#1A1300; box-shadow:0 2px 6px rgba(0,0,0,0.4);}
   .endpoint-flag{font-size:22px; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.5));}
+  .user-loc-wrap{width:46px; height:46px; position:relative;}
+  .user-loc-cone{position:absolute; left:50%; top:50%; width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent; border-bottom:34px solid rgba(59,130,246,0.35); transform-origin:50% 0%; margin-left:-14px; margin-top:-2px;}
+  .user-loc-dot{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:#3B82F6; border:2px solid #fff; box-shadow:0 0 0 3px rgba(59,130,246,0.28);}
 
   .street-line.street-twoway{stroke:var(--twoway) !important;}
   .street-line.street-oneway{stroke:var(--oneway) !important;}
   .street-line.next-stop{stroke:var(--accent) !important; stroke-width:6 !important;}
   .route-line{stroke:var(--route) !important;}
   .drawing-line{stroke:var(--accent) !important;}
+  .bairro-poly{stroke:var(--bairro) !important; fill:var(--bairro) !important; fill-opacity:0.08 !important;}
 
-  .toast{
-    position:fixed; left:50%; transform:translateX(-50%); bottom:calc(var(--safe-bottom) + 90px);
-    background:var(--surface-2); border:1px solid var(--border); color:var(--text);
-    padding:10px 16px; border-radius:10px; font-size:13px; z-index:200; opacity:0; transition:opacity .25s;
-  }
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(var(--safe-bottom) + 90px); background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:10px 16px; border-radius:10px; font-size:13px; z-index:200; opacity:0; transition:opacity .25s;}
   .toast.show{opacity:1;}
-
   .stop-card{border-left:3px solid var(--route);}
   .stop-card.done{border-left-color:var(--success); opacity:0.55;}
-  .stop-num{
-    width:26px; height:26px; border-radius:50%; background:var(--route); color:var(--route-ink);
-    display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex:none;
-  }
+  .stop-num{width:26px; height:26px; border-radius:50%; background:var(--route); color:var(--route-ink); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex:none;}
   .stop-card.done .stop-num{background:var(--success);}
   .endpoint-row-btn{flex:none; padding:8px 14px; border:none; border-radius:8px;}
 </style>
@@ -242,14 +150,12 @@
 <div id="mode-switch">
   <button data-mode="view" class="active">Ver</button>
   <button data-mode="edit">Editar</button>
+  <button data-mode="bairro">Bairro</button>
   <button data-mode="street">Rua</button>
   <button data-mode="house">Casa</button>
 </div>
 
-<div id="draw-banner">
-  <p id="draw-banner-text"></p>
-  <div class="row" id="draw-banner-actions"></div>
-</div>
+<div id="draw-banner"><p id="draw-banner-text"></p><div class="row" id="draw-banner-actions"></div></div>
 
 <button id="locate-btn">◎</button>
 <button id="theme-toggle" title="Modo claro/escuro">🌙</button>
@@ -271,7 +177,6 @@
   <button id="exec-stop-route">Encerrar rota</button>
 </div>
 
-<!-- LISTA PANEL -->
 <div class="panel" id="panel-lista">
   <h1>Ruas &amp; casas</h1>
   <p class="sub">Tudo que você já cadastrou andando pela cidade.</p>
@@ -280,7 +185,6 @@
   <div id="list-houses"></div>
 </div>
 
-<!-- ROTA PANEL -->
 <div class="panel" id="panel-rota">
   <div id="rota-select-view">
     <h1>Montar rota</h1>
@@ -295,6 +199,8 @@
         <button class="btn-ghost endpoint-row-btn" id="btn-set-end">Alterar</button>
       </div>
     </div>
+    <label class="field-label">Bairro</label>
+    <select id="bairro-filter"><option value="">Todos os bairros</option></select>
     <div class="segmented" id="sel-mode-switch">
       <button type="button" data-v="house" class="on">Por casas</button>
       <button type="button" data-v="street">Por ruas inteiras</button>
@@ -341,40 +247,58 @@
 ============================================================ */
 var streets = [];
 var houses  = [];
+var neighborhoods = []; // {id, name, points:[{lat,lng}...]}
 var routeState = null;
 var routeHistory = [];
 
-var mode = "view"; // view | edit | street | house | pick
+var mode = "view"; // view | edit | bairro | street | house | pick
 var pickTarget = null;
 var drawingPoints = [];
 var drawingLayer = null;
 var drawingMarkers = [];
 var selectionMode = "house"; // house | street
+var bairroFilterId = "";
 
 var map, baseLayer;
-var streetLayerGroup, houseLayerGroup, routeLineLayer, endpointLayerGroup;
+var streetLayerGroup, houseLayerGroup, routeLineLayer, endpointLayerGroup, neighborhoodLayerGroup;
 var userMarker = null;
+var watchId = null;
+var lastHeading = null;
 var tileErrorCount = 0;
 var tileOkCount = 0;
 var netBannerShown = false;
 
-var hasStorage = !!(window.storage && window.storage.get);
-
 /* ============================================================
-   STORAGE
+   STORAGE — Claude Artifact (window.storage) OU localStorage
+   (crítico: fora do Claude, window.storage não existe; sem esse
+   fallback os dados nunca eram salvos de fato no GitHub Pages)
 ============================================================ */
+var hasClaudeStorage = !!(window.storage && window.storage.get);
+var hasLocalStorage = (function(){
+  try{ var k="__t"; localStorage.setItem(k,"1"); localStorage.removeItem(k); return true; }
+  catch(e){ return false; }
+})();
 async function safeGet(key, fallback){
-  if(!hasStorage) return fallback;
-  try{ var r = await window.storage.get(key, false); return r ? JSON.parse(r.value) : fallback; }
-  catch(e){ return fallback; }
+  try{
+    if(hasClaudeStorage){
+      var r = await window.storage.get(key, false);
+      return r ? JSON.parse(r.value) : fallback;
+    } else if(hasLocalStorage){
+      var v = localStorage.getItem("rotas_"+key);
+      return v!==null ? JSON.parse(v) : fallback;
+    }
+  }catch(e){ console.error(e); }
+  return fallback;
 }
 async function safeSet(key, value){
-  if(!hasStorage) return;
-  try{ await window.storage.set(key, JSON.stringify(value), false); }
-  catch(e){ console.error("storage set falhou", key, e); }
+  try{
+    if(hasClaudeStorage){ await window.storage.set(key, JSON.stringify(value), false); }
+    else if(hasLocalStorage){ localStorage.setItem("rotas_"+key, JSON.stringify(value)); }
+  }catch(e){ console.error("storage set falhou", key, e); }
 }
 function saveStreets(){ safeSet("streets-v2", streets); }
 function saveHouses(){ safeSet("houses-v2", houses); }
+function saveNeighborhoods(){ safeSet("neighborhoods-v1", neighborhoods); }
 function saveRoute(){ safeSet("route-v3", routeState); }
 function saveHistory(){ safeSet("route-history-v1", routeHistory); }
 
@@ -414,10 +338,7 @@ function bearing(a,b){
   var x=Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dLng);
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
-function textAngleFor(a,b){
-  var brg = bearing(a,b);
-  return (brg>90 && brg<270) ? brg-180 : brg;
-}
+function textAngleFor(a,b){ var brg=bearing(a,b); return (brg>90 && brg<270) ? brg-180 : brg; }
 function fmtDist(m){ return m<1000 ? Math.round(m)+" m" : (m/1000).toFixed(1)+" km"; }
 function fmtTime(m){
   var mins = Math.round(m/1000/18*60);
@@ -441,20 +362,35 @@ function escapeAttr(s){ return escapeHtml(s); }
 function streetById(id){ return streets.find(function(s){return s.id===id;}); }
 function streetLabelForHouse(h){ var s = streetById(h.streetId); return s ? s.names.join(" / ") : ""; }
 function countHousesForStreet(id){ return houses.filter(function(h){return h.streetId===id;}).length; }
-function representativePointForStreet(s){
-  var idx = Math.floor(s.points.length/2);
-  return s.points[idx] || s.points[0];
+function representativePointForStreet(s){ var idx=Math.floor(s.points.length/2); return s.points[idx]||s.points[0]; }
+
+function pointInPolygon(pt, poly){
+  var inside=false;
+  for(var i=0,j=poly.length-1;i<poly.length;j=i++){
+    var xi=poly[i].lng, yi=poly[i].lat, xj=poly[j].lng, yj=poly[j].lat;
+    var intersect = ((yi>pt.lat)!==(yj>pt.lat)) && (pt.lng < (xj-xi)*(pt.lat-yi)/(yj-yi)+xi);
+    if(intersect) inside=!inside;
+  }
+  return inside;
+}
+function neighborhoodOfPoint(pt){
+  for(var i=0;i<neighborhoods.length;i++){ if(pointInPolygon(pt, neighborhoods[i].points)) return neighborhoods[i]; }
+  return null;
+}
+function houseInNeighborhood(h, nId){ return neighborhoodOfPoint({lat:h.lat,lng:h.lng}) && neighborhoodOfPoint({lat:h.lat,lng:h.lng}).id===nId; }
+function streetInNeighborhood(s, nId){
+  var n = neighborhoods.find(function(x){return x.id===nId;});
+  if(!n) return false;
+  return s.points.some(function(p){ return pointInPolygon(p, n.points); });
 }
 
 /* ---- abstração de "parada" (casa ou rua inteira) ---- */
 function stopKey(kind,id){ return kind+"::"+id; }
 function parseStopKey(key){ var i=key.indexOf("::"); return {kind:key.slice(0,i), id:key.slice(i+2)}; }
-function makeStopFromHouse(h){
-  return {kind:"house", id:h.id, lat:h.lat, lng:h.lng, label:"Nº "+h.number, sub: streetLabelForHouse(h)};
-}
+function makeStopFromHouse(h){ return {kind:"house", id:h.id, lat:h.lat, lng:h.lng, label:"Nº "+h.number, sub:streetLabelForHouse(h)}; }
 function makeStopFromStreet(s){
   var p = representativePointForStreet(s);
-  return {kind:"street", id:s.id, lat:p.lat, lng:p.lng, label: s.names.join(" / "), sub:(s.twoWay?"Mão dupla":"Sentido único")+" · rua inteira"};
+  return {kind:"street", id:s.id, lat:p.lat, lng:p.lng, label:s.names.join(" / "), sub:(s.twoWay?"Mão dupla":"Sentido único")+" · rua inteira"};
 }
 function resolveStop(key){
   var parsed = parseStopKey(key);
@@ -473,32 +409,26 @@ function closeModal(){
   document.getElementById("modal-overlay").classList.remove("show");
   document.getElementById("modal-content").innerHTML = "";
 }
-document.getElementById("modal-overlay").addEventListener("click", function(e){
-  if(e.target.id==="modal-overlay") closeModal();
-});
+document.getElementById("modal-overlay").addEventListener("click", function(e){ if(e.target.id==="modal-overlay") closeModal(); });
 
 /* ============================================================
-   TEMA
+   TEMA (o tile é sempre o mesmo; escuro = filtro CSS invertido)
 ============================================================ */
 function applyTheme(themeMode){
   document.body.classList.toggle("light", themeMode==="light");
   document.getElementById("theme-toggle").textContent = themeMode==="light" ? "☀️" : "🌙";
-  if(map) rebuildBaseLayer();
   safeSet("theme-v1", themeMode);
 }
-document.getElementById("theme-toggle").addEventListener("click", function(){
-  applyTheme(isLight() ? "dark" : "light");
-});
+document.getElementById("theme-toggle").addEventListener("click", function(){ applyTheme(isLight()?"dark":"light"); });
 
 /* ============================================================
-   MAPA / CAMADA BASE (Esri Canvas, sem nomes, sem chave)
+   MAPA (OpenStreetMap padrão — cobertura completa, sem chave)
 ============================================================ */
 function makeBaseLayer(){
-  var style = isLight() ? "World_Light_Gray_Base" : "World_Dark_Gray_Base";
-  var l = L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"+style+"/MapServer/tile/{z}/{y}/{x}",
-    {maxZoom:21, maxNativeZoom:16, detectRetina:true, attribution:"Tiles &copy; Esri"}
-  );
+  var l = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom:20, maxNativeZoom:19, subdomains:"abc", detectRetina:true,
+    attribution:"&copy; OpenStreetMap contributors"
+  });
   l.on("tileerror", onTileError);
   l.on("tileload", onTileOk);
   return l;
@@ -511,51 +441,76 @@ function onTileError(){
   }
 }
 function onTileOk(){ tileOkCount++; }
-function rebuildBaseLayer(){
-  if(baseLayer){ map.removeLayer(baseLayer); baseLayer=null; }
-  tileErrorCount=0; tileOkCount=0; netBannerShown=false;
-  document.getElementById("net-banner").classList.remove("show");
-  baseLayer = makeBaseLayer();
-  baseLayer.addTo(map);
-}
-document.getElementById("net-banner-close").addEventListener("click", function(){
-  document.getElementById("net-banner").classList.remove("show");
-});
+document.getElementById("net-banner-close").addEventListener("click", function(){ document.getElementById("net-banner").classList.remove("show"); });
 
 function initMap(){
-  map = L.map("map", {zoomControl:false, attributionControl:true, maxZoom:21}).setView([-23.5505,-46.6333], 16);
-  rebuildBaseLayer();
+  map = L.map("map", {zoomControl:false, attributionControl:true, maxZoom:20}).setView([-23.5505,-46.6333], 16);
+  baseLayer = makeBaseLayer();
+  baseLayer.addTo(map);
 
   streetLayerGroup = L.layerGroup().addTo(map);
   houseLayerGroup = L.layerGroup().addTo(map);
   routeLineLayer = L.layerGroup().addTo(map);
   endpointLayerGroup = L.layerGroup().addTo(map);
+  neighborhoodLayerGroup = L.layerGroup().addTo(map);
 
   map.on("click", onMapClick);
+  startLiveLocation();
+}
 
-  if(navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(function(pos){
-      var ll=[pos.coords.latitude,pos.coords.longitude];
-      map.setView(ll,17);
-      placeUserMarker(ll);
-    }, function(){}, {enableHighAccuracy:true, timeout:6000});
+/* ---- localização ao vivo + bússola (cone de direção) ---- */
+function placeUserMarker(ll, heading){
+  var html = '<div class="user-loc-wrap">'+
+    (heading!==null && heading!==undefined ? '<div class="user-loc-cone" style="transform:rotate('+heading+'deg);"></div>' : '')+
+    '<div class="user-loc-dot"></div></div>';
+  var icon = L.divIcon({className:"", html:html, iconSize:[46,46], iconAnchor:[23,23]});
+  if(userMarker){ userMarker.setLatLng(ll); userMarker.setIcon(icon); }
+  else { userMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map); }
+}
+function handleOrientation(e){
+  var heading = (e.webkitCompassHeading!==undefined && e.webkitCompassHeading!==null) ? e.webkitCompassHeading
+    : (e.alpha!==null && e.alpha!==undefined ? (360-e.alpha) : null);
+  if(heading!==null && !isNaN(heading)){
+    lastHeading = heading;
+    if(userMarker){ var ll = userMarker.getLatLng(); placeUserMarker(ll, heading); }
   }
 }
-function placeUserMarker(ll){
-  if(userMarker) map.removeLayer(userMarker);
-  userMarker = L.circleMarker(ll,{radius:7, color:"#fff", weight:2, fillColor:"#3B82F6", fillOpacity:1}).addTo(map);
+function startLiveLocation(){
+  if(navigator.geolocation){
+    watchId = navigator.geolocation.watchPosition(function(pos){
+      var ll=[pos.coords.latitude,pos.coords.longitude];
+      placeUserMarker(ll, pos.coords.heading!==null && !isNaN(pos.coords.heading) ? pos.coords.heading : lastHeading);
+      if(!startLiveLocation._centered){ map.setView(ll,17); startLiveLocation._centered=true; }
+    }, function(){}, {enableHighAccuracy:true});
+  }
+  try{
+    if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
+      // no iOS isso precisa de um gesto do usuário; tentamos direto e, se falhar,
+      // o botão de localizar tenta de novo.
+      DeviceOrientationEvent.requestPermission().then(function(state){
+        if(state==="granted") window.addEventListener("deviceorientation", handleOrientation);
+      }).catch(function(){});
+    } else if(typeof DeviceOrientationEvent!=="undefined"){
+      window.addEventListener("deviceorientation", handleOrientation);
+    }
+  }catch(e){}
 }
 document.getElementById("locate-btn").addEventListener("click", function(){
+  if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
+    DeviceOrientationEvent.requestPermission().then(function(state){
+      if(state==="granted") window.addEventListener("deviceorientation", handleOrientation);
+    }).catch(function(){});
+  }
   if(!navigator.geolocation) return showToast("Localização não disponível.");
   navigator.geolocation.getCurrentPosition(function(pos){
     var ll=[pos.coords.latitude,pos.coords.longitude];
     map.setView(ll,17);
-    placeUserMarker(ll);
+    placeUserMarker(ll, lastHeading);
   }, function(){ showToast("Não foi possível obter sua localização."); });
 });
 
 function onMapClick(e){
-  if(mode==="street"){
+  if(mode==="street" || mode==="bairro"){
     drawingPoints.push({lat:e.latlng.lat, lng:e.latlng.lng});
     redrawDrawing(); updateDrawBanner();
   } else if(mode==="house"){
@@ -563,14 +518,9 @@ function onMapClick(e){
   } else if(mode==="pick"){
     var pt = {lat:e.latlng.lat, lng:e.latlng.lng};
     var rs = ensureRouteState();
-    if(pickTarget==="start"){ rs.customStart = pt; }
-    else { rs.customEnd = pt; rs.endMode = "custom"; }
-    saveRoute();
-    pickTarget = null;
-    setMode("view");
-    renderEndpointMarkers();
-    setTab("rota");
-    updateEndpointLabels();
+    if(pickTarget==="start"){ rs.customStart = pt; } else { rs.customEnd = pt; rs.endMode = "custom"; }
+    saveRoute(); pickTarget = null; setMode("view");
+    renderEndpointMarkers(); setTab("rota"); updateEndpointLabels();
     showToast("Ponto definido.");
   }
 }
@@ -579,7 +529,12 @@ function redrawDrawing(){
   drawingMarkers.forEach(function(m){map.removeLayer(m);});
   drawingMarkers=[];
   if(drawingPoints.length===0) return;
-  drawingLayer = L.polyline(drawingPoints.map(function(p){return [p.lat,p.lng];}), {className:"drawing-line", weight:4, dashArray:"6,6"}).addTo(map);
+  var latlngs = drawingPoints.map(function(p){return [p.lat,p.lng];});
+  if(mode==="bairro" && drawingPoints.length>=3){
+    drawingLayer = L.polygon(latlngs, {className:"bairro-poly", weight:3, dashArray:"6,6"}).addTo(map);
+  } else {
+    drawingLayer = L.polyline(latlngs, {className:"drawing-line", weight:4, dashArray:"6,6"}).addTo(map);
+  }
   drawingPoints.forEach(function(p){
     var m = L.circleMarker([p.lat,p.lng],{radius:5, color:"#fff", weight:2, fillColor:"#A855F7", fillOpacity:1}).addTo(map);
     drawingMarkers.push(m);
@@ -593,11 +548,9 @@ document.querySelectorAll("#mode-switch button").forEach(function(btn){
   btn.addEventListener("click", function(){ setMode(btn.dataset.mode); });
 });
 function setMode(m){
-  if(mode==="street" && m!=="street") cancelDrawing();
+  if((mode==="street"||mode==="bairro") && m!==mode) cancelDrawing();
   mode = m;
-  document.querySelectorAll("#mode-switch button").forEach(function(b){
-    b.classList.toggle("active", b.dataset.mode===mode);
-  });
+  document.querySelectorAll("#mode-switch button").forEach(function(b){ b.classList.toggle("active", b.dataset.mode===mode); });
   updateDrawBanner();
 }
 function updateDrawBanner(){
@@ -606,21 +559,22 @@ function updateDrawBanner(){
   var actions = document.getElementById("draw-banner-actions");
   if(mode==="street"){
     banner.classList.add("show");
-    text.textContent = drawingPoints.length<2
-      ? "Toque no mapa para marcar os pontos da rua, na ordem em que ela segue."
-      : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    text.textContent = drawingPoints.length<2 ? "Toque no mapa para marcar os pontos da rua, na ordem em que ela segue." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
     actions.innerHTML="";
     if(drawingPoints.length>0) actions.appendChild(makeBtn("Desfazer ponto","btn-ghost",function(){ drawingPoints.pop(); redrawDrawing(); updateDrawBanner(); }));
     if(drawingPoints.length>=2) actions.appendChild(makeBtn("Concluir rua","btn-primary",finishStreetDrawing));
     if(drawingPoints.length>0) actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
+  } else if(mode==="bairro"){
+    banner.classList.add("show");
+    text.textContent = drawingPoints.length<3 ? "Toque no mapa para marcar o contorno do bairro (mín. 3 pontos)." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    actions.innerHTML="";
+    if(drawingPoints.length>0) actions.appendChild(makeBtn("Desfazer ponto","btn-ghost",function(){ drawingPoints.pop(); redrawDrawing(); updateDrawBanner(); }));
+    if(drawingPoints.length>=3) actions.appendChild(makeBtn("Concluir bairro","btn-primary",finishNeighborhoodDrawing));
+    if(drawingPoints.length>0) actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
   } else if(mode==="house"){
-    banner.classList.add("show");
-    text.textContent = "Toque no mapa sobre a casa para cadastrar o número.";
-    actions.innerHTML="";
+    banner.classList.add("show"); text.textContent = "Toque no mapa sobre a casa para cadastrar o número."; actions.innerHTML="";
   } else if(mode==="edit"){
-    banner.classList.add("show");
-    text.textContent = "Toque numa casa ou rua no mapa para editar.";
-    actions.innerHTML="";
+    banner.classList.add("show"); text.textContent = "Toque numa casa, rua ou bairro no mapa para editar."; actions.innerHTML="";
   } else if(mode==="pick"){
     banner.classList.add("show");
     text.textContent = "Toque no mapa para marcar o "+(pickTarget==="start"?"início":"fim")+" da rota.";
@@ -630,11 +584,7 @@ function updateDrawBanner(){
     banner.classList.remove("show");
   }
 }
-function makeBtn(label,cls,fn){
-  var b=document.createElement("button");
-  b.textContent=label; b.className=cls; b.addEventListener("click",fn);
-  return b;
-}
+function makeBtn(label,cls,fn){ var b=document.createElement("button"); b.textContent=label; b.className=cls; b.addEventListener("click",fn); return b; }
 function cancelDrawing(){ drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
 
 /* ============================================================
@@ -645,10 +595,9 @@ function openStreetForm(existing, newPoints){
   var names = existing ? existing.names.slice() : [""];
   if(names.length===0) names=[""];
   var twoWay = existing ? existing.twoWay : true;
-
   function rowsHtml(){
     return names.map(function(n,i){
-      return '<div class="name-row" style="display:flex;gap:8px;margin-bottom:8px;">'+
+      return '<div style="display:flex;gap:8px;margin-bottom:8px;">'+
         '<input type="text" class="street-name-input" data-idx="'+i+'" placeholder="Nome '+(i+1)+'" value="'+escapeAttr(n)+'" style="margin-bottom:0;flex:1;">'+
         (names.length>1 ? '<button type="button" class="icon-btn danger remove-name-row" data-idx="'+i+'" style="flex:none;">✕</button>' : '')+
       '</div>';
@@ -665,23 +614,18 @@ function openStreetForm(existing, newPoints){
       '<button type="button" data-v="0" class="'+(!twoWay?"on":"")+'">Sentido único</button>'+
     '</div>'+
     '<p class="card-meta" style="margin-bottom:14px;">No sentido único, o trânsito segue na ordem em que os pontos foram marcados no mapa.</p>'+
-    '<div class="modal-actions">'+
-      '<button class="btn-ghost" id="f-street-cancel">Cancelar</button>'+
-      '<button class="btn-primary" id="f-street-save">Salvar rua</button>'+
-    '</div>'+
+    '<div class="modal-actions"><button class="btn-ghost" id="f-street-cancel">Cancelar</button><button class="btn-primary" id="f-street-save">Salvar rua</button></div>'+
     (existing ? '<button class="btn-danger" id="f-street-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir rua</button>' : '')
   );
   function bindRemove(){
     document.querySelectorAll(".remove-name-row").forEach(function(b){
-      b.addEventListener("click", function(){ syncNamesFromInputs(); names.splice(+b.dataset.idx,1); refreshRows(); });
+      b.addEventListener("click", function(){ syncNames(); names.splice(+b.dataset.idx,1); refreshRows(); });
     });
   }
   function refreshRows(){ document.getElementById("street-names-wrap").innerHTML = rowsHtml(); bindRemove(); }
-  function syncNamesFromInputs(){
-    document.querySelectorAll(".street-name-input").forEach(function(inp){ names[+inp.dataset.idx] = inp.value; });
-  }
+  function syncNames(){ document.querySelectorAll(".street-name-input").forEach(function(inp){ names[+inp.dataset.idx] = inp.value; }); }
   bindRemove();
-  document.getElementById("add-name-row").addEventListener("click", function(){ syncNamesFromInputs(); names.push(""); refreshRows(); });
+  document.getElementById("add-name-row").addEventListener("click", function(){ syncNames(); names.push(""); refreshRows(); });
   document.querySelectorAll("#f-street-dir button").forEach(function(b){
     b.addEventListener("click",function(){
       document.querySelectorAll("#f-street-dir button").forEach(function(x){x.classList.remove("on");});
@@ -693,10 +637,10 @@ function openStreetForm(existing, newPoints){
     closeModal();
   });
   document.getElementById("f-street-save").addEventListener("click", function(){
-    syncNamesFromInputs();
+    syncNames();
     var finalNames = names.map(function(n){return n.trim();}).filter(Boolean);
     if(finalNames.length===0){ showToast("Dê ao menos um nome para a rua."); return; }
-    if(existing){ existing.names = finalNames; existing.twoWay = twoWay; }
+    if(existing){ existing.names=finalNames; existing.twoWay=twoWay; }
     else { streets.push({id:uid(), names:finalNames, twoWay:twoWay, points:newPoints}); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
     saveStreets();
     renderStreetsOnMap(); renderListaPanel(); renderRotaChecklist();
@@ -716,13 +660,56 @@ function openStreetPopup(s){
   openModal(
     '<h2>'+escapeHtml(s.names.join(" / "))+'</h2>'+
     '<p class="card-meta">'+(s.twoWay?"Mão dupla":"Sentido único")+' · '+countHousesForStreet(s.id)+' casas vinculadas</p>'+
-    '<div class="modal-actions" style="margin-top:16px;">'+
-      '<button class="btn-ghost" id="st-close">Fechar</button>'+
-      '<button class="btn-primary" id="st-edit">Editar</button>'+
-    '</div>'
+    '<div class="modal-actions" style="margin-top:16px;"><button class="btn-ghost" id="st-close">Fechar</button><button class="btn-primary" id="st-edit">Editar</button></div>'
   );
   document.getElementById("st-close").addEventListener("click", closeModal);
   document.getElementById("st-edit").addEventListener("click", function(){ openStreetForm(s); });
+}
+
+/* ============================================================
+   FORMULÁRIO DE BAIRRO
+============================================================ */
+function finishNeighborhoodDrawing(){ openNeighborhoodForm(null, drawingPoints.slice()); }
+function openNeighborhoodForm(existing, newPoints){
+  openModal(
+    '<h2>'+(existing?"Editar bairro":"Novo bairro")+'</h2>'+
+    '<label class="field-label">Nome do bairro</label>'+
+    '<input type="text" id="f-bairro-name" placeholder="Ex: Centro" value="'+(existing?escapeAttr(existing.name):"")+'">'+
+    '<div class="modal-actions"><button class="btn-ghost" id="f-bairro-cancel">Cancelar</button><button class="btn-primary" id="f-bairro-save">Salvar bairro</button></div>'+
+    (existing ? '<button class="btn-danger" id="f-bairro-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir bairro</button>' : '')
+  );
+  document.getElementById("f-bairro-cancel").addEventListener("click", function(){
+    if(!existing){ drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    closeModal();
+  });
+  document.getElementById("f-bairro-save").addEventListener("click", function(){
+    var name = document.getElementById("f-bairro-name").value.trim();
+    if(!name){ showToast("Dê um nome para o bairro."); return; }
+    if(existing){ existing.name = name; }
+    else { neighborhoods.push({id:uid(), name:name, points:newPoints}); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    saveNeighborhoods();
+    renderNeighborhoodsOnMap(); populateBairroFilter();
+    closeModal(); showToast("Bairro salvo.");
+  });
+  if(existing){
+    document.getElementById("f-bairro-delete").addEventListener("click", function(){
+      neighborhoods = neighborhoods.filter(function(x){return x.id!==existing.id;});
+      saveNeighborhoods();
+      renderNeighborhoodsOnMap(); populateBairroFilter();
+      closeModal(); showToast("Bairro excluído.");
+    });
+  }
+}
+function openNeighborhoodPopup(n){
+  var houseCount = houses.filter(function(h){return houseInNeighborhood(h,n.id);}).length;
+  var streetCount = streets.filter(function(s){return streetInNeighborhood(s,n.id);}).length;
+  openModal(
+    '<h2>'+escapeHtml(n.name)+'</h2>'+
+    '<p class="card-meta">'+streetCount+' ruas · '+houseCount+' casas dentro da área</p>'+
+    '<div class="modal-actions" style="margin-top:16px;"><button class="btn-ghost" id="nb-close">Fechar</button><button class="btn-primary" id="nb-edit">Editar</button></div>'
+  );
+  document.getElementById("nb-close").addEventListener("click", closeModal);
+  document.getElementById("nb-edit").addEventListener("click", function(){ openNeighborhoodForm(n); });
 }
 
 /* ============================================================
@@ -749,10 +736,7 @@ function openHouseForm(existing, pt){
     '<input type="text" id="f-house-number" placeholder="Ex: 245" value="'+(existing?escapeAttr(existing.number):"")+'" inputmode="numeric">'+
     '<label class="field-label">Rua</label>'+
     '<select id="f-house-street"><option value="">Sem rua vinculada</option>'+options+'</select>'+
-    '<div class="modal-actions">'+
-      '<button class="btn-ghost" id="f-house-cancel">Cancelar</button>'+
-      '<button class="btn-primary" id="f-house-save">Salvar</button>'+
-    '</div>'+
+    '<div class="modal-actions"><button class="btn-ghost" id="f-house-cancel">Cancelar</button><button class="btn-primary" id="f-house-save">Salvar</button></div>'+
     (existing ? '<button class="btn-danger" id="f-house-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir casa</button>' : '')
   );
   document.getElementById("f-house-cancel").addEventListener("click", closeModal);
@@ -783,8 +767,8 @@ function currentNextStopKey(){
   var rs = ensureRouteState();
   if(!rs.active) return null;
   var info = currentStopInfo();
-  if(!info) return null;
-  return info.kind==="house" ? stopKey("house", info.id) : (info.kind==="street" ? stopKey("street", info.id) : null);
+  if(!info || info.isEnd) return null;
+  return stopKey(info.kind, info.id);
 }
 function renderStreetsOnMap(){
   streetLayerGroup.clearLayers();
@@ -793,22 +777,37 @@ function renderStreetsOnMap(){
     var isNext = nextKey === stopKey("street", s.id);
     var latlngs = s.points.map(function(p){return [p.lat,p.lng];});
     var line = L.polyline(latlngs, {className:"street-line "+(s.twoWay?"street-twoway":"street-oneway")+(isNext?" next-stop":""), weight: isNext?6:4, opacity:0.9}).addTo(streetLayerGroup);
-    line.on("click", function(ev){ L.DomEvent.stopPropagation(ev); if(mode==="edit") openStreetPopup(s); });
+    line.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
 
+    var nameStr = s.names.join(" / ");
     for(var i=0;i<s.points.length-1;i++){
       var a=s.points[i], b=s.points[i+1];
-      var midpt = [(a.lat+b.lat)/2, (a.lng+b.lng)/2];
+      var distM = haversine(a,b);
+      var spacing = 90;
+      var count = Math.max(1, Math.round(distM/spacing));
       var angle = textAngleFor(a,b);
-      var cls = "street-label "+(s.twoWay?"label-twoway":"label-oneway")+(isNext?" next-stop":"");
-      var labelIcon = L.divIcon({className:"", html:'<div class="'+cls+'" style="transform:translate(-50%,-50%) rotate('+angle+'deg);">'+escapeHtml(s.names.join(" / "))+'</div>', iconSize:[0,0]});
-      var labelMarker = L.marker(midpt,{icon:labelIcon}).addTo(streetLayerGroup);
-      labelMarker.on("click", function(ev){ L.DomEvent.stopPropagation(ev); if(mode==="edit") openStreetPopup(s); });
+      var arrowAngle = bearing(a,b);
+      for(var k=0;k<count;k++){
+        var t = (k+0.5)/count;
+        var lat = a.lat + (b.lat-a.lat)*t;
+        var lng = a.lng + (b.lng-a.lng)*t;
+        var showArrow = !s.twoWay && count>1 && (k%2===1);
+        var markerIcon;
+        if(showArrow){
+          markerIcon = L.divIcon({className:"", html:'<div class="street-chevron" style="transform:translate(-50%,-50%) rotate('+arrowAngle+'deg);">➤</div>', iconSize:[0,0]});
+        } else {
+          var cls = "street-label "+(s.twoWay?"label-twoway":"label-oneway")+(isNext?" next-stop":"");
+          markerIcon = L.divIcon({className:"", html:'<div class="'+cls+'" style="transform:translate(-50%,-50%) rotate('+angle+'deg);">'+escapeHtml(nameStr)+'</div>', iconSize:[0,0]});
+        }
+        var lm = L.marker([lat,lng],{icon:markerIcon}).addTo(streetLayerGroup);
+        lm.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
+      }
     }
   });
 }
 function renderHousesOnMap(){
   houseLayerGroup.clearLayers();
-  var doneSet = routeState && routeState.completed ? new Set(routeState.completed.map(function(k){return k;})) : new Set();
+  var doneSet = routeState && routeState.completed ? new Set(routeState.completed) : new Set();
   var nextKey = currentNextStopKey();
   houses.forEach(function(h){
     var key = stopKey("house", h.id);
@@ -820,7 +819,7 @@ function renderHousesOnMap(){
       iconSize:[0,0]
     });
     var m = L.marker([h.lat,h.lng],{icon:icon}).addTo(houseLayerGroup);
-    m.on("click", function(ev){ L.DomEvent.stopPropagation(ev); if(mode==="edit") openHouseForm(h, {lat:h.lat,lng:h.lng}); });
+    m.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openHouseForm(h, {lat:h.lat,lng:h.lng}); } });
   });
 }
 function renderEndpointMarkers(){
@@ -834,6 +833,20 @@ function renderEndpointMarkers(){
     var ei = L.divIcon({className:"", html:'<div class="endpoint-flag" style="transform:translate(-50%,-100%);">🏁</div>', iconSize:[0,0]});
     L.marker([rs.customEnd.lat, rs.customEnd.lng], {icon:ei}).addTo(endpointLayerGroup);
   }
+}
+function renderNeighborhoodsOnMap(){
+  neighborhoodLayerGroup.clearLayers();
+  neighborhoods.forEach(function(n){
+    var latlngs = n.points.map(function(p){return [p.lat,p.lng];});
+    var poly = L.polygon(latlngs, {className:"bairro-poly", weight:2.5}).addTo(neighborhoodLayerGroup);
+    poly.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
+    var lat=0,lng=0;
+    n.points.forEach(function(p){lat+=p.lat; lng+=p.lng;});
+    lat/=n.points.length; lng/=n.points.length;
+    var labelIcon = L.divIcon({className:"", html:'<div class="bairro-label" style="transform:translate(-50%,-50%);">'+escapeHtml(n.name)+'</div>', iconSize:[0,0]});
+    var lm = L.marker([lat,lng],{icon:labelIcon}).addTo(neighborhoodLayerGroup);
+    lm.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
+  });
 }
 
 /* ============================================================
@@ -873,19 +886,15 @@ function renderListaPanel(){
     sHtml = '<div class="section-title">Ruas ('+streets.length+')</div>';
     filteredStreets.forEach(function(s){
       sHtml += '<div class="card"><div class="card-row">'+
-        '<div class="grow"><p class="card-title">'+escapeHtml(s.names.join(" / "))+'</p>'+
-        '<p class="card-meta">'+countHousesForStreet(s.id)+' casas</p></div>'+
+        '<div class="grow"><p class="card-title">'+escapeHtml(s.names.join(" / "))+'</p><p class="card-meta">'+countHousesForStreet(s.id)+' casas</p></div>'+
         '<span class="badge '+(s.twoWay?"badge-twoway":"badge-oneway")+'">'+(s.twoWay?"Mão dupla":"Sentido único")+'</span>'+
-        '<button class="icon-btn" data-locate-street="'+s.id+'">◎</button>'+
-        '</div></div>';
+        '<button class="icon-btn" data-locate-street="'+s.id+'">◎</button></div></div>';
     });
   }
   document.getElementById("list-streets").innerHTML = sHtml;
 
   var hHtml = "";
-  var filteredHouses = houses.filter(function(h){
-    return h.number.toLowerCase().includes(q) || streetLabelForHouse(h).toLowerCase().includes(q);
-  });
+  var filteredHouses = houses.filter(function(h){ return h.number.toLowerCase().includes(q) || streetLabelForHouse(h).toLowerCase().includes(q); });
   if(houses.length===0){
     hHtml = '<div class="section-title">Casas</div><div class="empty">Nenhuma casa cadastrada ainda. Use o modo "Casa" no mapa.</div>';
   } else {
@@ -893,11 +902,8 @@ function renderListaPanel(){
     filteredHouses.forEach(function(h){
       var label = streetLabelForHouse(h);
       hHtml += '<div class="card"><div class="card-row">'+
-        '<div class="grow"><p class="card-title">Nº '+escapeHtml(h.number)+'</p>'+
-        '<p class="card-meta">'+(label?escapeHtml(label):"sem rua vinculada")+'</p></div>'+
-        '<button class="icon-btn" data-locate-house="'+h.id+'">◎</button>'+
-        '<button class="icon-btn danger" data-delete-house="'+h.id+'">✕</button>'+
-        '</div></div>';
+        '<div class="grow"><p class="card-title">Nº '+escapeHtml(h.number)+'</p><p class="card-meta">'+(label?escapeHtml(label):"sem rua vinculada")+'</p></div>'+
+        '<button class="icon-btn" data-locate-house="'+h.id+'">◎</button><button class="icon-btn danger" data-delete-house="'+h.id+'">✕</button></div></div>';
     });
   }
   document.getElementById("list-houses").innerHTML = hHtml;
@@ -924,12 +930,10 @@ function renderListaPanel(){
 }
 
 /* ============================================================
-   ROTA — início / fim
+   ROTA — início / fim / bairro / seleção / histórico
 ============================================================ */
 function ensureRouteState(){
-  if(!routeState){
-    routeState = {selectedIds:[], order:[], completed:[], active:false, endMode:"open", endDone:false, customStart:null, customEnd:null};
-  }
+  if(!routeState){ routeState = {selectedIds:[], order:[], completed:[], active:false, endMode:"open", endDone:false, customStart:null, customEnd:null}; }
   if(routeState.endMode===undefined) routeState.endMode="open";
   if(routeState.endDone===undefined) routeState.endDone=false;
   if(routeState.customStart===undefined) routeState.customStart=null;
@@ -941,14 +945,9 @@ function ensureRouteState(){
 function updateEndpointLabels(){
   var rs = ensureRouteState();
   document.getElementById("start-label").textContent = rs.customStart ? "Ponto escolhido no mapa" : "Minha localização atual";
-  var endText = rs.endMode==="roundtrip" ? "Volta ao início"
-    : (rs.endMode==="custom" && rs.customEnd ? "Ponto escolhido no mapa" : "Rota aberta (mais eficiente)");
-  document.getElementById("end-label").textContent = endText;
+  document.getElementById("end-label").textContent = rs.endMode==="roundtrip" ? "Volta ao início" : (rs.endMode==="custom" && rs.customEnd ? "Ponto escolhido no mapa" : "Rota aberta (mais eficiente)");
 }
-function startPicking(kind){
-  pickTarget = kind; setMode("pick"); setTab("mapa");
-  showToast("Toque no mapa para marcar o "+(kind==="start"?"início":"fim"));
-}
+function startPicking(kind){ pickTarget=kind; setMode("pick"); setTab("mapa"); showToast("Toque no mapa para marcar o "+(kind==="start"?"início":"fim")); }
 document.getElementById("btn-set-start").addEventListener("click", function(){
   openModal(
     '<h2>Início da rota</h2>'+
@@ -956,8 +955,7 @@ document.getElementById("btn-set-start").addEventListener("click", function(){
     '<button class="btn-ghost" id="opt-start-map" style="width:100%;border:none;border-radius:10px;padding:13px;">Escolher no mapa</button>'
   );
   document.getElementById("opt-start-gps").addEventListener("click", function(){
-    var rs = ensureRouteState(); rs.customStart=null; saveRoute();
-    renderEndpointMarkers(); updateEndpointLabels(); closeModal();
+    var rs=ensureRouteState(); rs.customStart=null; saveRoute(); renderEndpointMarkers(); updateEndpointLabels(); closeModal();
   });
   document.getElementById("opt-start-map").addEventListener("click", function(){ closeModal(); startPicking("start"); });
 });
@@ -969,25 +967,27 @@ document.getElementById("btn-set-end").addEventListener("click", function(){
     '<button class="btn-ghost" id="opt-end-map" style="width:100%;border:none;border-radius:10px;padding:13px;">Escolher no mapa</button>'
   );
   document.getElementById("opt-end-open").addEventListener("click", function(){
-    var rs = ensureRouteState(); rs.endMode="open"; rs.customEnd=null; saveRoute();
-    renderEndpointMarkers(); updateEndpointLabels(); closeModal();
+    var rs=ensureRouteState(); rs.endMode="open"; rs.customEnd=null; saveRoute(); renderEndpointMarkers(); updateEndpointLabels(); closeModal();
   });
   document.getElementById("opt-end-round").addEventListener("click", function(){
-    var rs = ensureRouteState(); rs.endMode="roundtrip"; rs.customEnd=null; saveRoute();
-    renderEndpointMarkers(); updateEndpointLabels(); closeModal();
+    var rs=ensureRouteState(); rs.endMode="roundtrip"; rs.customEnd=null; saveRoute(); renderEndpointMarkers(); updateEndpointLabels(); closeModal();
   });
   document.getElementById("opt-end-map").addEventListener("click", function(){ closeModal(); startPicking("end"); });
 });
 
-/* ============================================================
-   ROTA — seleção (por casa ou por rua) + busca + histórico
-============================================================ */
+function populateBairroFilter(){
+  var sel = document.getElementById("bairro-filter");
+  var current = sel.value;
+  sel.innerHTML = '<option value="">Todos os bairros</option>'+neighborhoods.map(function(n){return '<option value="'+n.id+'">'+escapeHtml(n.name)+'</option>';}).join("");
+  sel.value = neighborhoods.some(function(n){return n.id===current;}) ? current : "";
+  bairroFilterId = sel.value;
+}
+document.getElementById("bairro-filter").addEventListener("change", function(e){ bairroFilterId = e.target.value; renderRotaChecklist(); });
+
 document.querySelectorAll("#sel-mode-switch button").forEach(function(b){
   b.addEventListener("click", function(){
     document.querySelectorAll("#sel-mode-switch button").forEach(function(x){x.classList.remove("on");});
-    b.classList.add("on");
-    selectionMode = b.dataset.v;
-    renderRotaChecklist();
+    b.classList.add("on"); selectionMode = b.dataset.v; renderRotaChecklist();
   });
 });
 document.getElementById("rota-search").addEventListener("input", renderRotaChecklist);
@@ -999,24 +999,23 @@ function renderRotaChecklist(){
   var rs = ensureRouteState();
 
   if(selectionMode==="street"){
-    if(streets.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma rua cadastrada ainda.</div>'; updateRotaCta(); return; }
-    var filtered = streets.filter(function(s){ return s.names.join(" ").toLowerCase().includes(q); });
+    var streetPool = bairroFilterId ? streets.filter(function(s){return streetInNeighborhood(s,bairroFilterId);}) : streets;
+    if(streetPool.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma rua nessa área ainda.</div>'; updateRotaCta(); return; }
+    var filtered = streetPool.filter(function(s){ return s.names.join(" ").toLowerCase().includes(q); });
     if(filtered.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma rua encontrada.</div>'; updateRotaCta(); return; }
     var html = "";
     filtered.forEach(function(s){
       var key = stopKey("street", s.id);
       var checked = rs.selectedIds.includes(key);
-      html += '<label class="checkrow"><input type="checkbox" data-stop-check="'+key+'" '+(checked?"checked":"")+'>'+
-        escapeHtml(s.names.join(" / "))+' <span style="color:var(--text-muted);font-size:12px;">('+(s.twoWay?"mão dupla":"sentido único")+')</span></label>';
+      html += '<label class="checkrow"><input type="checkbox" data-stop-check="'+key+'" '+(checked?"checked":"")+'>'+escapeHtml(s.names.join(" / "))+
+        ' <span style="color:var(--text-muted);font-size:12px;">('+(s.twoWay?"mão dupla":"sentido único")+')</span></label>';
     });
     wrap.innerHTML = html;
   } else {
-    if(houses.length===0){ wrap.innerHTML = '<div class="empty">Cadastre casas no mapa antes de montar uma rota.</div>'; updateRotaCta(); return; }
+    var housePool = bairroFilterId ? houses.filter(function(h){return houseInNeighborhood(h,bairroFilterId);}) : houses;
+    if(housePool.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma casa nessa área ainda.</div>'; updateRotaCta(); return; }
     var byStreet = {};
-    houses.forEach(function(h){
-      var key = streetLabelForHouse(h) || "Sem rua vinculada";
-      (byStreet[key]=byStreet[key]||[]).push(h);
-    });
+    housePool.forEach(function(h){ var key = streetLabelForHouse(h) || "Sem rua vinculada"; (byStreet[key]=byStreet[key]||[]).push(h); });
     var keys = Object.keys(byStreet).filter(function(k){ return k.toLowerCase().includes(q); }).sort();
     if(keys.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma rua encontrada.</div>'; updateRotaCta(); return; }
     var html2 = "";
@@ -1033,9 +1032,7 @@ function renderRotaChecklist(){
   document.querySelectorAll("[data-stop-check]").forEach(function(cb){ cb.addEventListener("change", updateRotaCta); });
   updateRotaCta();
 }
-function getSelectedStopKeys(){
-  return Array.from(document.querySelectorAll("[data-stop-check]:checked")).map(function(cb){return cb.dataset.stopCheck;});
-}
+function getSelectedStopKeys(){ return Array.from(document.querySelectorAll("[data-stop-check]:checked")).map(function(cb){return cb.dataset.stopCheck;}); }
 function updateRotaCta(){
   var cta = document.getElementById("rota-cta");
   var selecting = document.getElementById("rota-select-view").style.display!=="none";
@@ -1048,10 +1045,7 @@ function updateRotaCta(){
 }
 document.getElementById("btn-history").addEventListener("click", openHistoryModal);
 function addHistoryEntry(rs){
-  var entry = {
-    id: uid(), date: new Date().toISOString(),
-    stops: rs.order.map(resolveStop).filter(Boolean).map(function(st){return {label:st.label, sub:st.sub};})
-  };
+  var entry = { id: uid(), date: new Date().toISOString(), stops: rs.order.map(resolveStop).filter(Boolean).map(function(st){return {label:st.label, sub:st.sub};}) };
   routeHistory.unshift(entry);
   if(routeHistory.length>50) routeHistory = routeHistory.slice(0,50);
   saveHistory();
@@ -1062,8 +1056,7 @@ function openHistoryModal(){
   } else {
     var html = '<h2>Histórico de rotas</h2>';
     routeHistory.forEach(function(e){
-      html += '<div class="card"><p class="card-title">'+fmtDate(e.date)+'</p>'+
-        '<p class="card-meta">'+e.stops.length+' paradas: '+e.stops.map(function(s){return escapeHtml(s.label);}).join(", ")+'</p></div>';
+      html += '<div class="card"><p class="card-title">'+fmtDate(e.date)+'</p><p class="card-meta">'+e.stops.length+' paradas: '+e.stops.map(function(s){return escapeHtml(s.label);}).join(", ")+'</p></div>';
     });
     html += '<div class="modal-actions"><button class="btn-primary" id="hist-close" style="width:100%;">Fechar</button></div>';
     openModal(html);
@@ -1075,7 +1068,7 @@ function openHistoryModal(){
    GRAFO + DIJKSTRA + TSP
 ============================================================ */
 function buildGraph(){
-  var nodes = []; var adj = []; var keyIndex = {};
+  var nodes=[]; var adj=[]; var keyIndex={};
   function getNodeId(pt){
     var k = pt.lat.toFixed(5)+","+pt.lng.toFixed(5);
     if(keyIndex[k]===undefined){ keyIndex[k]=nodes.length; nodes.push({lat:pt.lat,lng:pt.lng}); adj.push([]); }
@@ -1083,10 +1076,7 @@ function buildGraph(){
   }
   function addEdge(a,b,d,bidir){ adj[a].push({to:b,dist:d}); if(bidir) adj[b].push({to:a,dist:d}); }
   streets.forEach(function(s){
-    for(var i=0;i<s.points.length-1;i++){
-      var a=s.points[i], b=s.points[i+1];
-      addEdge(getNodeId(a), getNodeId(b), haversine(a,b), s.twoWay);
-    }
+    for(var i=0;i<s.points.length-1;i++){ var a=s.points[i], b=s.points[i+1]; addEdge(getNodeId(a),getNodeId(b),haversine(a,b),s.twoWay); }
   });
   return {nodes:nodes, adj:adj, addExternalNode:function(pt){
     var id = nodes.length; nodes.push({lat:pt.lat,lng:pt.lng}); adj.push([]);
@@ -1097,17 +1087,12 @@ function buildGraph(){
         if(d<bestD){ bestD=d; best={a:s.points[i], b:s.points[i+1]}; }
       }
     });
-    if(best){
-      addEdge(id, getNodeId(best.a), haversine(pt,best.a), true);
-      addEdge(id, getNodeId(best.b), haversine(pt,best.b), true);
-    }
+    if(best){ addEdge(id, getNodeId(best.a), haversine(pt,best.a), true); addEdge(id, getNodeId(best.b), haversine(pt,best.b), true); }
     return id;
   }};
 }
 function dijkstra(adj, sourceId){
-  var n = adj.length;
-  var dist = new Array(n).fill(Infinity);
-  var visited = new Array(n).fill(false);
+  var n=adj.length; var dist=new Array(n).fill(Infinity); var visited=new Array(n).fill(false);
   dist[sourceId]=0;
   for(var iter=0; iter<n; iter++){
     var u=-1, best=Infinity;
@@ -1119,10 +1104,9 @@ function dijkstra(adj, sourceId){
   return dist;
 }
 function nearestNeighborTour(matrix, n, startIdx){
-  var visited = new Array(n).fill(false);
-  var tour = [startIdx]; visited[startIdx]=true;
+  var visited=new Array(n).fill(false); var tour=[startIdx]; visited[startIdx]=true;
   for(var step=1; step<n; step++){
-    var cur = tour[tour.length-1], best=-1, bestD=Infinity;
+    var cur=tour[tour.length-1], best=-1, bestD=Infinity;
     for(var j=0;j<n;j++){ if(!visited[j] && matrix[cur][j]<bestD){ bestD=matrix[cur][j]; best=j; } }
     if(best===-1) break;
     visited[best]=true; tour.push(best);
@@ -1130,9 +1114,7 @@ function nearestNeighborTour(matrix, n, startIdx){
   return tour;
 }
 function nearestNeighborTourFixedEnd(matrix, n, startIdx, endIdx){
-  var visited = new Array(n).fill(false);
-  visited[startIdx]=true; visited[endIdx]=true;
-  var tour=[startIdx];
+  var visited=new Array(n).fill(false); visited[startIdx]=true; visited[endIdx]=true; var tour=[startIdx];
   for(var step=0; step<n-2; step++){
     var cur=tour[tour.length-1], best=-1, bestD=Infinity;
     for(var j=0;j<n;j++){ if(!visited[j] && matrix[cur][j]<bestD){bestD=matrix[cur][j]; best=j;} }
@@ -1142,10 +1124,7 @@ function nearestNeighborTourFixedEnd(matrix, n, startIdx, endIdx){
   tour.push(endIdx);
   return tour;
 }
-function tourCost(tour, matrix){
-  var c=0; for(var i=0;i<tour.length-1;i++) c+=matrix[tour[i]][tour[i+1]];
-  return c;
-}
+function tourCost(tour, matrix){ var c=0; for(var i=0;i<tour.length-1;i++) c+=matrix[tour[i]][tour[i+1]]; return c; }
 function twoOptImprove(tour, matrix, opts){
   opts = opts || {};
   var iStart = opts.lockFirst ? 1 : 0;
@@ -1156,7 +1135,7 @@ function twoOptImprove(tour, matrix, opts){
     for(var i=iStart;i<kMax;i++){
       for(var k=i+1;k<=kMax;k++){
         var newTour = tour.slice(0,i).concat(tour.slice(i,k+1).reverse(), tour.slice(k+1));
-        if(tourCost(newTour,matrix) < tourCost(tour,matrix) - 0.5){ tour = newTour; improved=true; }
+        if(tourCost(newTour,matrix) < tourCost(tour,matrix) - 0.5){ tour=newTour; improved=true; }
       }
     }
   }
@@ -1164,13 +1143,8 @@ function twoOptImprove(tour, matrix, opts){
 }
 function solveTSP(matrix, n, hasFixedEnd){
   var tour;
-  if(hasFixedEnd){
-    tour = nearestNeighborTourFixedEnd(matrix, n, 0, n-1);
-    tour = twoOptImprove(tour, matrix, {lockFirst:true, lockLast:true});
-  } else {
-    tour = nearestNeighborTour(matrix, n, 0);
-    tour = twoOptImprove(tour, matrix, {lockFirst:true, lockLast:false});
-  }
+  if(hasFixedEnd){ tour=nearestNeighborTourFixedEnd(matrix,n,0,n-1); tour=twoOptImprove(tour,matrix,{lockFirst:true,lockLast:true}); }
+  else { tour=nearestNeighborTour(matrix,n,0); tour=twoOptImprove(tour,matrix,{lockFirst:true,lockLast:false}); }
   return {tour:tour, dist:tourCost(tour, matrix)};
 }
 
@@ -1180,21 +1154,20 @@ function computeRoute(){
   var rs = ensureRouteState();
   rs.selectedIds = keys;
   var stops = keys.map(resolveStop).filter(Boolean);
-
-  var startPt = rs.customStart || (userMarker ? {lat:userMarker.getLatLng().lat,lng:userMarker.getLatLng().lng} : {lat:stops[0].lat,lng:stops[0].lng});
+  var startPt = rs.customStart || (userMarker ? userMarker.getLatLng() : {lat:stops[0].lat,lng:stops[0].lng});
+  startPt = {lat:startPt.lat, lng:startPt.lng};
   var fixedEndPt = null;
   if(rs.endMode==="roundtrip") fixedEndPt = startPt;
   else if(rs.endMode==="custom" && rs.customEnd) fixedEndPt = rs.customEnd;
 
-  var warning = "";
-  var order, totalDist;
+  var warning = ""; var order, totalDist;
   try{
     var g = buildGraph();
     var startNode = g.addExternalNode(startPt);
     var nodeList = [startNode].concat(stops.map(function(st){return g.addExternalNode({lat:st.lat,lng:st.lng});}));
     if(fixedEndPt) nodeList.push(g.addExternalNode(fixedEndPt));
     var n = nodeList.length;
-    var matrix = []; var unreachable = false;
+    var matrix=[]; var unreachable=false;
     for(var i=0;i<n;i++){
       var dist = dijkstra(g.adj, nodeList[i]);
       matrix.push(nodeList.map(function(nid){
@@ -1205,7 +1178,6 @@ function computeRoute(){
     }
     if(unreachable) warning = "Algumas paradas ainda não estão conectadas por ruas cadastradas — a rota usa estimativa em linha reta para esses trechos.";
     if(streets.length===0) warning = "Nenhuma rua cadastrada ainda: a ordem foi calculada em linha reta.";
-
     var solved = solveTSP(matrix, n, !!fixedEndPt);
     totalDist = solved.dist;
     var slice = fixedEndPt ? solved.tour.slice(1, solved.tour.length-1) : solved.tour.slice(1);
@@ -1224,9 +1196,7 @@ function computeRoute(){
   }
 
   rs.order = order.map(function(st){ return stopKey(st.kind, st.id); });
-  rs.completed = [];
-  rs.endDone = false;
-  rs.active = false;
+  rs.completed = []; rs.endDone = false; rs.active = false;
   saveRoute();
   showRouteResult(order, totalDist, warning);
 }
@@ -1240,10 +1210,8 @@ function showRouteResult(order, totalDist, warning){
   if(warning){ warnEl.style.display="block"; warnEl.textContent=warning; } else { warnEl.style.display="none"; }
 
   var html = order.map(function(st,i){
-    return '<div class="card"><div class="card-row">'+
-      '<div class="stop-num">'+(i+1)+'</div>'+
-      '<div class="grow"><p class="card-title">'+escapeHtml(st.label)+'</p><p class="card-meta">'+escapeHtml(st.sub||"")+'</p></div>'+
-      '</div></div>';
+    return '<div class="card"><div class="card-row"><div class="stop-num">'+(i+1)+'</div>'+
+      '<div class="grow"><p class="card-title">'+escapeHtml(st.label)+'</p><p class="card-meta">'+escapeHtml(st.sub||"")+'</p></div></div></div>';
   }).join("");
   if(rs.endMode==="roundtrip"){
     html += '<div class="card"><div class="card-row"><div class="stop-num">🏁</div><div class="grow"><p class="card-title">Fim</p><p class="card-meta">Volta ao ponto de início</p></div></div></div>';
@@ -1255,19 +1223,14 @@ function showRouteResult(order, totalDist, warning){
   document.getElementById("rota-redo").addEventListener("click", function(){
     document.getElementById("rota-select-view").style.display="block";
     document.getElementById("rota-result-view").style.display="none";
-    document.getElementById("rota-cta").style.display="block";
     updateRotaCta();
   });
 
   drawRouteLine(order, rs);
   renderEndpointMarkers();
-  document.getElementById("rota-cta").style.display="none";
-
   var cta = document.getElementById("rota-cta");
-  cta.textContent = "Iniciar rota";
-  cta.disabled=false;
-  cta.onclick = startRouteExecution;
-  document.getElementById("rota-cta").style.display = "block";
+  cta.textContent = "Iniciar rota"; cta.disabled=false; cta.onclick = startRouteExecution;
+  cta.style.display = "block";
 }
 function drawRouteLine(order, rs){
   routeLineLayer.clearLayers();
@@ -1282,19 +1245,11 @@ function drawRouteLine(order, rs){
 /* ============================================================
    ROTA — execução (barra dinâmica, sem modal)
 ============================================================ */
-function startRouteExecution(){
-  var rs = ensureRouteState();
-  rs.active = true; saveRoute();
-  setTab("mapa");
-  refreshExecUI();
-}
+function startRouteExecution(){ var rs=ensureRouteState(); rs.active=true; saveRoute(); setTab("mapa"); refreshExecUI(); }
 function currentStopInfo(){
   var rs = ensureRouteState();
   var remaining = rs.order.filter(function(k){return !rs.completed.includes(k);});
-  if(remaining.length>0){
-    var st = resolveStop(remaining[0]);
-    if(st) return {kind:st.kind, id:st.id, stop:st, isEnd:false};
-  }
+  if(remaining.length>0){ var st = resolveStop(remaining[0]); if(st) return {kind:st.kind, id:st.id, stop:st, isEnd:false}; }
   if(rs.endMode!=="open" && !rs.endDone){
     var pt = rs.endMode==="roundtrip" ? (rs.customStart || (userMarker?{lat:userMarker.getLatLng().lat,lng:userMarker.getLatLng().lng}:null)) : rs.customEnd;
     if(pt) return {kind:"end", id:null, stop:{lat:pt.lat,lng:pt.lng,label:(rs.endMode==="roundtrip"?"Volta ao início":"Destino final"),sub:""}, isEnd:true};
@@ -1308,11 +1263,7 @@ function refreshExecUI(){
   var bar = document.getElementById("exec-bar");
   if(!rs.active || !info){
     bar.classList.remove("show");
-    if(rs.active && !info){
-      showToast("Rota concluída! 🎉");
-      addHistoryEntry(rs);
-      rs.active=false; saveRoute();
-    }
+    if(rs.active && !info){ showToast("Rota concluída! 🎉"); addHistoryEntry(rs); rs.active=false; saveRoute(); }
     return;
   }
   bar.classList.add("show");
@@ -1323,18 +1274,13 @@ function refreshExecUI(){
   map.setView([info.stop.lat, info.stop.lng], Math.max(map.getZoom(),17));
 }
 document.getElementById("exec-done").addEventListener("click", function(){
-  var rs = ensureRouteState();
-  var info = currentStopInfo();
+  var rs = ensureRouteState(); var info = currentStopInfo();
   if(!info) return;
   if(info.isEnd){ rs.endDone = true; } else { rs.completed.push(stopKey(info.kind, info.id)); }
-  saveRoute();
-  refreshExecUI();
+  saveRoute(); refreshExecUI();
 });
 document.getElementById("exec-stop-route").addEventListener("click", function(){
-  var rs = ensureRouteState();
-  addHistoryEntry(rs);
-  rs.active=false; saveRoute();
-  refreshExecUI();
+  var rs = ensureRouteState(); addHistoryEntry(rs); rs.active=false; saveRoute(); refreshExecUI();
   showToast("Rota encerrada.");
 });
 
@@ -1348,16 +1294,20 @@ async function init(){
 
   streets = await safeGet("streets-v2", []);
   houses = await safeGet("houses-v2", []);
+  neighborhoods = await safeGet("neighborhoods-v1", []);
   routeState = await safeGet("route-v3", null);
   ensureRouteState();
   routeHistory = await safeGet("route-history-v1", []);
 
   renderStreetsOnMap();
   renderHousesOnMap();
+  renderNeighborhoodsOnMap();
   renderEndpointMarkers();
+  populateBairroFilter();
   renderListaPanel();
   renderRotaChecklist();
-  if(!hasStorage) showToast("Aviso: este visualizador não salva dados entre sessões.");
+
+  if(!hasClaudeStorage && !hasLocalStorage) showToast("Aviso: este navegador não permite salvar dados — eles vão se perder ao fechar.");
 
   if(routeState && routeState.active){
     setTimeout(function(){
