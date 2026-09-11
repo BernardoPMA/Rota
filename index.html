@@ -197,7 +197,7 @@
   <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
 </button>
 <button id="edit-menu-btn" title="Editar mapa">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
 </button>
 
 
@@ -224,6 +224,17 @@
   <input type="text" id="search-input" placeholder="Buscar por número ou nome da rua">
   <div id="list-streets"></div>
   <div id="list-houses"></div>
+
+  <div class="section-title">Dados</div>
+  <div class="card">
+    <p class="card-meta" style="margin-bottom:12px;">Backup local de tudo que está cadastrado (ruas, casas, bairros, rotas e histórico).</p>
+    <button class="btn-ghost" id="btn-export-backup" style="width:100%;border:none;border-radius:10px;padding:12px;margin-bottom:8px;">Exportar backup</button>
+    <button class="btn-ghost" id="btn-import-backup" style="width:100%;border:none;border-radius:10px;padding:12px;">Importar backup</button>
+    <input type="file" id="import-file-input" accept="application/json,.json" style="display:none;">
+  </div>
+  <div class="card">
+    <button class="btn-danger" id="btn-wipe-data" style="width:100%;border-radius:10px;padding:12px;background:transparent;">Apagar todos os dados</button>
+  </div>
 </div>
 
 <div class="panel" id="panel-rota">
@@ -291,6 +302,7 @@ var houses  = [];
 var neighborhoods = []; // {id, name, points:[{lat,lng}...]}
 var routeState = null;
 var routeHistory = [];
+var settings = {theme:"dark", baseKind:"clean"};
 
 var mode = "view"; // view | edit | bairro | street | house | pick
 var pickTarget = null;
@@ -310,15 +322,36 @@ var tileOkCount = 0;
 var netBannerShown = false;
 
 /* ============================================================
-   STORAGE — Claude Artifact (window.storage) OU localStorage
-   (crítico: fora do Claude, window.storage não existe; sem esse
-   fallback os dados nunca eram salvos de fato no GitHub Pages)
+   STORAGE — camada central e versionada
+   -----------------------------------------------------------
+   Antes, cada tipo de dado (ruas, casas, bairros, rota, histórico,
+   tema) vivia numa chave separada (streets-v2, houses-v2, route-v3,
+   route-history-v1, neighborhoods-v1, theme-v1, basekind-v1).
+   Isso é frágil: uma mudança pontual de chave, ou uma inicialização
+   que rode antes do carregamento terminar, pode fazer o app salvar
+   um array vazio por cima de dados que já existiam.
+
+   Agora existe UMA fonte de verdade: um único objeto ROTAS_APP_DATA,
+   com schemaVersion, salvo inteiro de uma vez. Toda leitura/escrita
+   passa por loadAppData()/saveAppData(). As chaves antigas nunca são
+   apagadas — na primeira execução com o novo formato, o app tenta
+   migrar automaticamente qualquer dado que encontrar nelas.
 ============================================================ */
+var SCHEMA_VERSION = 1;
+var CENTRAL_KEY = "rotas-app-data";
+var LEGACY_KEYS = {
+  streets:"streets-v2", houses:"houses-v2", neighborhoods:"neighborhoods-v1",
+  routeState:"route-v3", routeHistory:"route-history-v1",
+  theme:"theme-v1", baseKind:"basekind-v1"
+};
+
 var hasClaudeStorage = !!(window.storage && window.storage.get);
 var hasLocalStorage = (function(){
   try{ var k="__t"; localStorage.setItem(k,"1"); localStorage.removeItem(k); return true; }
   catch(e){ return false; }
 })();
+
+/* primitivas de baixo nível (usadas pela camada central e, se precisar, por qualquer outra coisa) */
 async function safeGet(key, fallback){
   try{
     if(hasClaudeStorage){
@@ -337,11 +370,99 @@ async function safeSet(key, value){
     else if(hasLocalStorage){ localStorage.setItem("rotas_"+key, JSON.stringify(value)); }
   }catch(e){ console.error("storage set falhou", key, e); }
 }
-function saveStreets(){ safeSet("streets-v2", streets); }
-function saveHouses(){ safeSet("houses-v2", houses); }
-function saveNeighborhoods(){ safeSet("neighborhoods-v1", neighborhoods); }
-function saveRoute(){ safeSet("route-v3", routeState); }
-function saveHistory(){ safeSet("route-history-v1", routeHistory); }
+async function rawGetClaude(key){
+  if(!hasClaudeStorage) return undefined;
+  try{ var r = await window.storage.get(key, false); return r ? JSON.parse(r.value) : undefined; }
+  catch(e){ return undefined; }
+}
+function rawGetLocal(key){
+  if(!hasLocalStorage) return undefined;
+  try{ var v = localStorage.getItem("rotas_"+key); return v!==null ? JSON.parse(v) : undefined; }
+  catch(e){ return undefined; }
+}
+/* pega o melhor valor legado disponível, olhando os dois armazenamentos possíveis
+   (o dado pode estar em qualquer um dependendo de onde o app já rodou antes) */
+async function bestLegacyValue(key, isArray){
+  var c = await rawGetClaude(key);
+  var l = rawGetLocal(key);
+  if(isArray){
+    var cArr = Array.isArray(c) ? c : null;
+    var lArr = Array.isArray(l) ? l : null;
+    if(cArr && lArr) return cArr.length >= lArr.length ? cArr : lArr;
+    return cArr || lArr || undefined;
+  }
+  if(c!==undefined && c!==null) return c;
+  if(l!==undefined && l!==null) return l;
+  return undefined;
+}
+
+/* garante que um objeto de dados carregado tem todos os campos esperados,
+   independente de qual versão de schema ele veio */
+function normalizeAppData(data){
+  if(!data || typeof data!=="object") data = {};
+  if(!data.schemaVersion || data.schemaVersion < 1) data.schemaVersion = 1;
+  if(!Array.isArray(data.streets)) data.streets = [];
+  if(!Array.isArray(data.houses)) data.houses = [];
+  if(!Array.isArray(data.neighborhoods)) data.neighborhoods = [];
+  if(!Array.isArray(data.routeHistory)) data.routeHistory = [];
+  if(data.routeState===undefined) data.routeState = null;
+  if(!data.settings || typeof data.settings!=="object") data.settings = {};
+  if(!data.settings.theme) data.settings.theme = "dark";
+  if(!data.settings.baseKind) data.settings.baseKind = "clean";
+  return data;
+}
+
+/* carrega os dados: se já existir o formato novo, usa ele; senão,
+   tenta migrar automaticamente do formato antigo (multi-chave) */
+async function loadAppData(){
+  var central = await safeGet(CENTRAL_KEY, null);
+  if(central && central.schemaVersion){
+    return normalizeAppData(central);
+  }
+  var legacyStreets = await bestLegacyValue(LEGACY_KEYS.streets, true);
+  var legacyHouses = await bestLegacyValue(LEGACY_KEYS.houses, true);
+  var legacyNeighborhoods = await bestLegacyValue(LEGACY_KEYS.neighborhoods, true);
+  var legacyRoute = await bestLegacyValue(LEGACY_KEYS.routeState, false);
+  var legacyHistory = await bestLegacyValue(LEGACY_KEYS.routeHistory, true);
+  var legacyTheme = await bestLegacyValue(LEGACY_KEYS.theme, false);
+  var legacyBaseKind = await bestLegacyValue(LEGACY_KEYS.baseKind, false);
+
+  var migrated = normalizeAppData({
+    schemaVersion: SCHEMA_VERSION,
+    streets: legacyStreets || [],
+    houses: legacyHouses || [],
+    neighborhoods: legacyNeighborhoods || [],
+    routeState: legacyRoute || null,
+    routeHistory: legacyHistory || [],
+    settings: { theme: legacyTheme || "dark", baseKind: legacyBaseKind || "clean" }
+  });
+
+  var foundLegacy = (legacyStreets&&legacyStreets.length) || (legacyHouses&&legacyHouses.length) ||
+    (legacyNeighborhoods&&legacyNeighborhoods.length) || legacyRoute || (legacyHistory&&legacyHistory.length);
+  await safeSet(CENTRAL_KEY, migrated); // já grava no formato novo, migração só acontece uma vez
+  if(foundLegacy) showToast("Dados antigos migrados com sucesso.");
+  return migrated;
+}
+
+/* salva TUDO de uma vez, sempre no formato novo e completo */
+function saveAppData(){
+  var payload = {
+    schemaVersion: SCHEMA_VERSION,
+    streets: streets,
+    houses: houses,
+    neighborhoods: neighborhoods,
+    routeState: routeState,
+    routeHistory: routeHistory,
+    settings: settings
+  };
+  safeSet(CENTRAL_KEY, payload);
+}
+function saveStreets(){ saveAppData(); }
+function saveHouses(){ saveAppData(); }
+function saveNeighborhoods(){ saveAppData(); }
+function saveRoute(){ saveAppData(); }
+function saveHistory(){ saveAppData(); }
+
 
 /* ============================================================
    UTIL
@@ -461,7 +582,8 @@ function applyTheme(themeMode){
   icon.innerHTML = themeMode==="light"
     ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>'
     : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>';
-  safeSet("theme-v1", themeMode);
+  settings.theme = themeMode;
+  saveAppData();
   if(map) rebuildBaseLayer();
 }
 document.getElementById("theme-toggle").addEventListener("click", function(){ applyTheme(isLight()?"dark":"light"); });
@@ -470,7 +592,7 @@ document.getElementById("theme-toggle").addEventListener("click", function(){ ap
    MAPA — base "limpo" (Esri Canvas, sem nomes/ícones, sem chave)
    com opção de trocar para OSM (com nomes) se a cobertura falhar
 ============================================================ */
-var baseKind = "clean"; // "clean" (Esri Canvas) | "labeled" (OSM)
+var baseKind = "clean"; // "clean" (Esri Canvas) | "labeled" (OSM) — espelha settings.baseKind
 function makeBaseLayer(){
   var l;
   if(baseKind==="labeled"){
@@ -506,9 +628,11 @@ function rebuildBaseLayer(){
 }
 function setBaseKind(kind){
   baseKind = kind;
-  safeSet("basekind-v1", kind);
+  settings.baseKind = kind;
+  saveAppData();
   if(map) rebuildBaseLayer();
 }
+
 
 function initMap(){
   map = L.map("map", {zoomControl:false, attributionControl:true, maxZoom:20}).setView([-23.5505,-46.6333], 16);
@@ -954,6 +1078,113 @@ function setTab(tab){
    PAINEL LISTA
 ============================================================ */
 document.getElementById("search-input").addEventListener("input", renderListaPanel);
+
+/* ============================================================
+   BACKUP — exportar / importar / apagar tudo
+============================================================ */
+var BACKUP_APP_TAG = "rotas-otimizador-backup";
+function currentDataSnapshot(){
+  return {
+    app: BACKUP_APP_TAG,
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    streets: streets,
+    houses: houses,
+    neighborhoods: neighborhoods,
+    routeState: routeState,
+    routeHistory: routeHistory,
+    settings: settings
+  };
+}
+document.getElementById("btn-export-backup").addEventListener("click", function(){
+  var data = currentDataSnapshot();
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  var url = URL.createObjectURL(blob);
+  var d = new Date();
+  var dateStr = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "backup-rotas-"+dateStr+".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  showToast("Backup exportado.");
+});
+
+document.getElementById("btn-import-backup").addEventListener("click", function(){
+  document.getElementById("import-file-input").click();
+});
+document.getElementById("import-file-input").addEventListener("change", function(e){
+  var file = e.target.files && e.target.files[0];
+  e.target.value = ""; // permite selecionar o mesmo arquivo de novo depois
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    var parsed;
+    try{ parsed = JSON.parse(reader.result); }
+    catch(err){ showToast("Arquivo inválido: não é um JSON."); return; }
+    if(!parsed || parsed.app!==BACKUP_APP_TAG || typeof parsed.schemaVersion!=="number"){
+      showToast("Esse arquivo não parece ser um backup deste aplicativo.");
+      return;
+    }
+    confirmImportBackup(parsed);
+  };
+  reader.onerror = function(){ showToast("Não foi possível ler o arquivo."); };
+  reader.readAsText(file);
+});
+function confirmImportBackup(parsed){
+  var dateStr = parsed.exportedAt ? fmtDate(parsed.exportedAt) : "data desconhecida";
+  var nStreets = Array.isArray(parsed.streets) ? parsed.streets.length : 0;
+  var nHouses = Array.isArray(parsed.houses) ? parsed.houses.length : 0;
+  openModal(
+    '<h2>Importar backup</h2>'+
+    '<p class="card-meta" style="margin-bottom:14px;">Backup de '+escapeHtml(dateStr)+' — '+nStreets+' ruas, '+nHouses+' casas.<br><br>'+
+    'Isso vai <strong>substituir todos os dados atuais</strong> do aplicativo por este backup. '+
+    'Uma cópia de segurança dos dados atuais é feita automaticamente antes, por precaução.</p>'+
+    '<div class="modal-actions"><button class="btn-ghost" id="import-cancel">Cancelar</button><button class="btn-primary" id="import-confirm">Importar e substituir</button></div>'
+  );
+  document.getElementById("import-cancel").addEventListener("click", closeModal);
+  document.getElementById("import-confirm").addEventListener("click", function(){
+    safeSet("rotas-app-data-preimport-backup", currentDataSnapshot()); // salvaguarda antes de sobrescrever
+    var normalized = normalizeAppData(parsed);
+    streets = normalized.streets;
+    houses = normalized.houses;
+    neighborhoods = normalized.neighborhoods;
+    routeState = normalized.routeState;
+    ensureRouteState();
+    routeHistory = normalized.routeHistory;
+    settings = normalized.settings;
+    baseKind = settings.baseKind;
+    saveAppData();
+    applyTheme(settings.theme);
+    renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
+    populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
+    closeModal();
+    showToast("Backup importado com sucesso.");
+  });
+}
+
+document.getElementById("btn-wipe-data").addEventListener("click", function(){
+  openModal(
+    '<h2>Apagar todos os dados</h2>'+
+    '<p class="card-meta" style="margin-bottom:14px;">Isso vai apagar <strong>permanentemente</strong> todas as ruas, casas, bairros, rotas e o histórico salvos neste aparelho. Essa ação não pode ser desfeita.</p>'+
+    '<div class="modal-actions"><button class="btn-ghost" id="wipe-cancel">Cancelar</button><button class="btn-danger" id="wipe-confirm">Apagar tudo</button></div>'
+  );
+  document.getElementById("wipe-cancel").addEventListener("click", closeModal);
+  document.getElementById("wipe-confirm").addEventListener("click", function(){
+    safeSet("rotas-app-data-prewipe-backup", currentDataSnapshot()); // salvaguarda antes de apagar
+    streets = []; houses = []; neighborhoods = [];
+    routeState = null; ensureRouteState();
+    routeHistory = [];
+    saveAppData();
+    renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
+    populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
+    closeModal();
+    showToast("Todos os dados foram apagados.");
+  });
+});
+
 var ICON_LOCATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>';
 var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
 
@@ -1375,16 +1606,17 @@ document.getElementById("exec-stop-route").addEventListener("click", function(){
 ============================================================ */
 async function init(){
   initMap();
-  baseKind = await safeGet("basekind-v1", "clean");
-  var savedTheme = await safeGet("theme-v1", "dark");
-  applyTheme(savedTheme);
 
-  streets = await safeGet("streets-v2", []);
-  houses = await safeGet("houses-v2", []);
-  neighborhoods = await safeGet("neighborhoods-v1", []);
-  routeState = await safeGet("route-v3", null);
+  var appData = await loadAppData();
+  streets = appData.streets;
+  houses = appData.houses;
+  neighborhoods = appData.neighborhoods;
+  routeState = appData.routeState;
   ensureRouteState();
-  routeHistory = await safeGet("route-history-v1", []);
+  routeHistory = appData.routeHistory;
+  settings = appData.settings;
+  baseKind = settings.baseKind;
+  applyTheme(settings.theme);
 
   renderStreetsOnMap();
   renderHousesOnMap();
