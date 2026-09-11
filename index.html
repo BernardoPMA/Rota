@@ -17,6 +17,7 @@
     --twoway:#67E8F9; --oneway:#FB7185; --bairro:#FBBF24;
     --success:#34D399; --danger:#FB7185;
     --label-bg:rgba(30,35,43,0.92); --label-text:#F5F6F7;
+    --surface-blur:rgba(28,32,39,0.82);
     --radius:14px; --safe-top:env(safe-area-inset-top); --safe-bottom:env(safe-area-inset-bottom);
   }
   body.light{
@@ -27,6 +28,7 @@
     --twoway:#0E7490; --oneway:#DC2626; --bairro:#B45309;
     --success:#059669; --danger:#DC2626;
     --label-bg:rgba(255,255,255,0.95); --label-text:#12141A;
+    --surface-blur:rgba(255,255,255,0.86);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%; margin:0; overscroll-behavior:none;}
@@ -34,35 +36,46 @@
   button{font-family:inherit;}
   #map{position:fixed; inset:0; z-index:0; background:#0A0C0F;}
   /* mapa base invertido no modo escuro (a fonte OSM só existe em versão clara) */
-  body:not(.light) .leaflet-tile-pane{ filter:invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.92) saturate(0.75); }
+  body:not(.light) .leaflet-tile-pane{ filter:invert(1) hue-rotate(180deg) brightness(0.88) contrast(1.08) saturate(0.35); }
 
-  #mode-switch{
+  #edit-fab{
+    display:flex; align-items:center; justify-content:center;
     position:fixed; left:50%; transform:translateX(-50%); top:calc(var(--safe-top) + 12px); z-index:10;
-    background:rgba(30,35,43,0.92); backdrop-filter:blur(8px); border:1px solid var(--border); border-radius:999px;
-    display:flex; padding:4px; gap:1px; max-width:96vw; overflow-x:auto;
+    width:46px; height:46px; border-radius:50%; border:1px solid var(--border);
+    background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms, background 150ms, color 150ms;
   }
-  #mode-switch button{border:none; background:transparent; color:var(--text-muted); padding:7px 10px; border-radius:999px; font-size:12.5px; font-weight:600; white-space:nowrap;}
-  #mode-switch button.active{background:var(--accent); color:var(--accent-ink);}
+  #edit-fab svg{width:19px; height:19px;}
+  #edit-fab.active{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
+  #edit-fab:active, #locate-btn:active, #theme-toggle:active{transform:scale(0.92);}
 
-  #draw-banner{position:fixed; left:12px; right:12px; z-index:10; top:calc(var(--safe-top) + 60px); background:rgba(30,35,43,0.95); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; display:none;}
-  #draw-banner.show{display:block;}
-  #draw-banner p{margin:0 0 10px; font-size:14px; color:var(--text-muted); line-height:1.4;}
+  #draw-banner{
+    position:fixed; left:12px; right:12px; z-index:10; top:calc(var(--safe-top) + 68px);
+    background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--border); border-radius:var(--radius); padding:14px; display:none;
+    box-shadow:0 8px 24px rgba(0,0,0,0.3);
+  }
+  #draw-banner.show{display:block; animation:sheet-in 200ms ease-out;}
+  #draw-banner .draw-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px;}
+  #draw-banner p{margin:0; font-size:14px; color:var(--text-muted); line-height:1.4; flex:1;}
+  #draw-banner #draw-banner-close{flex:none !important; border:none; background:var(--surface-2); color:var(--text-muted); width:26px !important; height:26px; border-radius:50% !important; font-size:14px; line-height:1; padding:0 !important;}
   #draw-banner .row{display:flex; gap:8px;}
   #draw-banner button{flex:1; border:none; border-radius:10px; padding:10px; font-size:14px; font-weight:600;}
   .btn-primary{background:var(--accent); color:var(--accent-ink);}
   .btn-ghost{background:var(--surface-2); color:var(--text);}
   .btn-danger{background:transparent; color:var(--danger); border:1px solid var(--danger) !important;}
 
-  #locate-btn{position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 84px); width:44px; height:44px; border-radius:50%; border:1px solid var(--border); background:rgba(30,35,43,0.92); color:var(--text); font-size:18px;}
-  #theme-toggle{position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 136px); width:44px; height:44px; border-radius:50%; border:1px solid var(--border); background:rgba(30,35,43,0.92); color:var(--text); font-size:17px;}
-  #net-banner{position:fixed; left:12px; right:12px; z-index:15; top:calc(var(--safe-top) + 60px); background:rgba(30,25,20,0.97); border:1px solid var(--oneway); border-radius:var(--radius); padding:14px; display:none;}
+  #locate-btn{display:flex; align-items:center; justify-content:center; position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 84px); width:46px; height:46px; border-radius:50%; border:1px solid var(--border); background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms;}
+  #locate-btn svg, #theme-toggle svg{width:20px; height:20px;}
+  #theme-toggle{display:flex; align-items:center; justify-content:center; position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 138px); width:46px; height:46px; border-radius:50%; border:1px solid var(--border); background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms;}
+  #net-banner{position:fixed; left:12px; right:12px; z-index:15; top:calc(var(--safe-top) + 68px); background:rgba(30,25,20,0.97); border:1px solid var(--oneway); border-radius:var(--radius); padding:14px; display:none;}
   #net-banner.show{display:block;}
   #net-banner p{margin:0 0 12px; font-size:13.5px; color:var(--text); line-height:1.5;}
   #net-banner button{width:100%; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:600; background:var(--accent); color:var(--accent-ink);}
 
   #tabbar{position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; background:rgba(20,23,28,0.96); backdrop-filter:blur(10px); border-top:1px solid var(--border); padding-bottom:var(--safe-bottom);}
   body.light #tabbar{background:rgba(255,255,255,0.96);}
-  #tabbar button{flex:1; border:none; background:none; color:var(--text-muted); padding:10px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; font-weight:600;}
+  #tabbar button{flex:1; border:none; background:none; color:var(--text-muted); padding:10px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; font-weight:600; transition:color 180ms;}
   #tabbar button svg{width:22px; height:22px;}
   #tabbar button.active{color:var(--accent);}
 
@@ -96,7 +109,7 @@
   .sticky-cta{position:fixed; left:16px; right:16px; bottom:calc(var(--safe-bottom) + 74px); z-index:25; background:var(--accent); color:var(--accent-ink); border:none; border-radius:12px; padding:14px; font-size:15px; font-weight:700; box-shadow:0 8px 20px rgba(0,0,0,0.35);}
   .sticky-cta:disabled{opacity:0.4;}
 
-  #exec-bar{position:fixed; left:12px; right:12px; z-index:25; bottom:calc(var(--safe-bottom) + 74px); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:none;}
+  #exec-bar{position:fixed; left:12px; right:12px; z-index:25; bottom:calc(var(--safe-bottom) + 74px); background:var(--surface-blur); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:none;}
   #exec-bar.show{display:block;}
   #exec-bar .exec-row{display:flex; align-items:center; gap:10px;}
   #exec-bar .exec-label{font-size:11px; color:var(--route); font-weight:700; margin:0 0 2px; text-transform:uppercase; letter-spacing:0.03em;}
@@ -107,7 +120,8 @@
 
   #modal-overlay{position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.55); display:none; align-items:flex-end;}
   #modal-overlay.show{display:flex;}
-  #modal-content{background:var(--surface); border-radius:20px 20px 0 0; width:100%; padding:18px 18px calc(var(--safe-bottom) + 18px); max-height:80vh; overflow-y:auto;}
+  #modal-content{background:var(--surface); border-radius:22px 22px 0 0; width:100%; padding:20px 18px calc(var(--safe-bottom) + 18px); max-height:80vh; overflow-y:auto; animation:modal-in 220ms cubic-bezier(.2,.8,.2,1);}
+  @keyframes modal-in{from{opacity:0; transform:translateY(16px);} to{opacity:1; transform:translateY(0);}}
   #modal-content h2{font-size:17px; margin:2px 0 16px;}
   .modal-actions{display:flex; gap:10px; margin-top:6px;}
   .modal-actions button{flex:1; border:none; border-radius:10px; padding:13px; font-size:15px; font-weight:700;}
@@ -116,16 +130,24 @@
   .house-pin.done{background:var(--success);}
   .house-pin.next-stop{outline:3px solid var(--accent); animation:pulse 1.4s infinite;}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(168,85,247,0.55);} 70%{box-shadow:0 0 0 9px rgba(168,85,247,0);} 100%{box-shadow:0 0 0 0 rgba(168,85,247,0);}}
-  .street-label{display:inline-block; width:max-content; font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.35); background:var(--label-bg); color:var(--label-text); border:1.5px solid transparent;}
-  .street-label.label-oneway{border-color:var(--oneway);}
-  .street-label.label-twoway{border-color:var(--twoway);}
-  .street-label.next-stop{outline:2px solid var(--accent);}
-  .street-chevron{font-size:15px; font-weight:900; color:var(--oneway); filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));}
-  .bairro-label{display:inline-block; width:max-content; font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; white-space:nowrap; background:var(--bairro); color:#1A1300; box-shadow:0 2px 6px rgba(0,0,0,0.4);}
+  @keyframes sheet-in{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);}}
+  .edit-menu-row{
+    width:100%; display:flex; align-items:center; gap:12px; border:none; background:var(--surface-2);
+    color:var(--text); padding:13px 14px; border-radius:12px; margin-bottom:8px; font-size:15px; font-weight:600;
+    transition:background 150ms, transform 150ms;
+  }
+  .edit-menu-row:active{transform:scale(0.98);}
+  .edit-menu-row svg{width:20px; height:20px; flex:none; color:var(--accent);}
+  .edit-menu-row.danger-row svg{color:var(--danger);}
   .endpoint-flag{font-size:22px; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.5));}
-  .user-loc-wrap{width:46px; height:46px; position:relative;}
-  .user-loc-cone{position:absolute; left:50%; top:50%; width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent; border-bottom:34px solid rgba(59,130,246,0.35); transform-origin:50% 0%; margin-left:-14px; margin-top:-2px;}
-  .user-loc-dot{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:#3B82F6; border:2px solid #fff; box-shadow:0 0 0 3px rgba(59,130,246,0.28);}
+  .user-loc-wrap{width:52px; height:52px; position:relative;}
+  .user-loc-cone{
+    position:absolute; left:50%; top:50%; width:52px; height:52px; margin-left:-26px; margin-top:-52px;
+    clip-path:polygon(50% 100%, 18% 6%, 82% 6%);
+    background:linear-gradient(to top, rgba(59,130,246,0.5), rgba(59,130,246,0.02));
+    transform-origin:50% 100%;
+  }
+  .user-loc-dot{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:#3B82F6; border:2.5px solid #fff; box-shadow:0 0 0 4px rgba(59,130,246,0.22), 0 2px 6px rgba(0,0,0,0.35);}
 
   .street-line.street-twoway{stroke:var(--twoway) !important;}
   .street-line.street-oneway{stroke:var(--oneway) !important;}
@@ -147,18 +169,24 @@
 
 <div id="map"></div>
 
-<div id="mode-switch">
-  <button data-mode="view" class="active">Ver</button>
-  <button data-mode="edit">Editar</button>
-  <button data-mode="bairro">Bairro</button>
-  <button data-mode="street">Rua</button>
-  <button data-mode="house">Casa</button>
+<button id="edit-fab" title="Editar mapa">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+</button>
+
+<div id="draw-banner">
+  <div class="draw-head">
+    <p id="draw-banner-text"></p>
+    <button id="draw-banner-close">✕</button>
+  </div>
+  <div class="row" id="draw-banner-actions"></div>
 </div>
 
-<div id="draw-banner"><p id="draw-banner-text"></p><div class="row" id="draw-banner-actions"></div></div>
-
-<button id="locate-btn">◎</button>
-<button id="theme-toggle" title="Modo claro/escuro">🌙</button>
+<button id="locate-btn" title="Minha localização">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+</button>
+<button id="theme-toggle" title="Modo claro/escuro">
+  <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+</button>
 
 <div id="net-banner">
   <p id="net-banner-text">As imagens do mapa não carregaram. Isso costuma acontecer quando o arquivo é aberto numa pré-visualização sem internet liberada, em vez do Safari.</p>
@@ -416,7 +444,10 @@ document.getElementById("modal-overlay").addEventListener("click", function(e){ 
 ============================================================ */
 function applyTheme(themeMode){
   document.body.classList.toggle("light", themeMode==="light");
-  document.getElementById("theme-toggle").textContent = themeMode==="light" ? "☀️" : "🌙";
+  var icon = document.getElementById("theme-icon");
+  icon.innerHTML = themeMode==="light"
+    ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>'
+    : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>';
   safeSet("theme-v1", themeMode);
 }
 document.getElementById("theme-toggle").addEventListener("click", function(){ applyTheme(isLight()?"dark":"light"); });
@@ -463,7 +494,7 @@ function placeUserMarker(ll, heading){
   var html = '<div class="user-loc-wrap">'+
     (heading!==null && heading!==undefined ? '<div class="user-loc-cone" style="transform:rotate('+heading+'deg);"></div>' : '')+
     '<div class="user-loc-dot"></div></div>';
-  var icon = L.divIcon({className:"", html:html, iconSize:[46,46], iconAnchor:[23,23]});
+  var icon = L.divIcon({className:"", html:html, iconSize:[52,52], iconAnchor:[26,26]});
   if(userMarker){ userMarker.setLatLng(ll); userMarker.setIcon(icon); }
   else { userMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map); }
 }
@@ -544,13 +575,38 @@ function redrawDrawing(){
 /* ============================================================
    MODO DE INTERAÇÃO
 ============================================================ */
-document.querySelectorAll("#mode-switch button").forEach(function(btn){
-  btn.addEventListener("click", function(){ setMode(btn.dataset.mode); });
+document.getElementById("edit-fab").addEventListener("click", openEditMenu);
+function openEditMenu(){
+  openModal(
+    '<h2>Editar mapa</h2>'+
+    '<button type="button" class="edit-menu-row" id="menu-add-bairro">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>'+
+      'Adicionar bairro</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-add-street">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="4"/></svg>'+
+      'Adicionar rua</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-add-house">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>'+
+      'Adicionar casa</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-edit-el">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'+
+      'Editar elemento</button>'+
+    '<button type="button" class="btn-ghost" id="menu-close" style="width:100%;border:none;border-radius:12px;padding:13px;margin-top:4px;">Cancelar</button>'
+  );
+  document.getElementById("menu-add-bairro").addEventListener("click", function(){ closeModal(); setMode("bairro"); });
+  document.getElementById("menu-add-street").addEventListener("click", function(){ closeModal(); setMode("street"); });
+  document.getElementById("menu-add-house").addEventListener("click", function(){ closeModal(); setMode("house"); });
+  document.getElementById("menu-edit-el").addEventListener("click", function(){ closeModal(); setMode("edit"); });
+  document.getElementById("menu-close").addEventListener("click", closeModal);
+}
+document.getElementById("draw-banner-close").addEventListener("click", function(){
+  if(mode==="street"||mode==="bairro") cancelDrawing();
+  setMode("view");
 });
 function setMode(m){
   if((mode==="street"||mode==="bairro") && m!==mode) cancelDrawing();
   mode = m;
-  document.querySelectorAll("#mode-switch button").forEach(function(b){ b.classList.toggle("active", b.dataset.mode===mode); });
+  document.getElementById("edit-fab").classList.toggle("active", mode!=="view");
   updateDrawBanner();
 }
 function updateDrawBanner(){
@@ -778,31 +834,6 @@ function renderStreetsOnMap(){
     var latlngs = s.points.map(function(p){return [p.lat,p.lng];});
     var line = L.polyline(latlngs, {className:"street-line "+(s.twoWay?"street-twoway":"street-oneway")+(isNext?" next-stop":""), weight: isNext?6:4, opacity:0.9}).addTo(streetLayerGroup);
     line.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
-
-    var nameStr = s.names.join(" / ");
-    for(var i=0;i<s.points.length-1;i++){
-      var a=s.points[i], b=s.points[i+1];
-      var distM = haversine(a,b);
-      var spacing = 90;
-      var count = Math.max(1, Math.round(distM/spacing));
-      var angle = textAngleFor(a,b);
-      var arrowAngle = bearing(a,b);
-      for(var k=0;k<count;k++){
-        var t = (k+0.5)/count;
-        var lat = a.lat + (b.lat-a.lat)*t;
-        var lng = a.lng + (b.lng-a.lng)*t;
-        var showArrow = !s.twoWay && count>1 && (k%2===1);
-        var markerIcon;
-        if(showArrow){
-          markerIcon = L.divIcon({className:"", html:'<div class="street-chevron" style="transform:translate(-50%,-50%) rotate('+arrowAngle+'deg);">➤</div>', iconSize:[0,0]});
-        } else {
-          var cls = "street-label "+(s.twoWay?"label-twoway":"label-oneway")+(isNext?" next-stop":"");
-          markerIcon = L.divIcon({className:"", html:'<div class="'+cls+'" style="transform:translate(-50%,-50%) rotate('+angle+'deg);">'+escapeHtml(nameStr)+'</div>', iconSize:[0,0]});
-        }
-        var lm = L.marker([lat,lng],{icon:markerIcon}).addTo(streetLayerGroup);
-        lm.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
-      }
-    }
   });
 }
 function renderHousesOnMap(){
@@ -815,7 +846,7 @@ function renderHousesOnMap(){
     var isNext = nextKey===key;
     var icon = L.divIcon({
       className:"",
-      html:'<div class="house-pin'+(isDone?" done":"")+(isNext?" next-stop":"")+'" style="transform:translate(-50%,-100%);">'+escapeHtml(h.number)+(isNext?' · próxima':'')+'</div>',
+      html:'<div class="house-pin'+(isDone?" done":"")+(isNext?" next-stop":"")+'" style="transform:translate(-50%,-100%);">'+escapeHtml(h.number)+'</div>',
       iconSize:[0,0]
     });
     var m = L.marker([h.lat,h.lng],{icon:icon}).addTo(houseLayerGroup);
@@ -840,12 +871,6 @@ function renderNeighborhoodsOnMap(){
     var latlngs = n.points.map(function(p){return [p.lat,p.lng];});
     var poly = L.polygon(latlngs, {className:"bairro-poly", weight:2.5}).addTo(neighborhoodLayerGroup);
     poly.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
-    var lat=0,lng=0;
-    n.points.forEach(function(p){lat+=p.lat; lng+=p.lng;});
-    lat/=n.points.length; lng/=n.points.length;
-    var labelIcon = L.divIcon({className:"", html:'<div class="bairro-label" style="transform:translate(-50%,-50%);">'+escapeHtml(n.name)+'</div>', iconSize:[0,0]});
-    var lm = L.marker([lat,lng],{icon:labelIcon}).addTo(neighborhoodLayerGroup);
-    lm.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
   });
 }
 
@@ -860,7 +885,7 @@ function setTab(tab){
   document.getElementById("panel-lista").classList.toggle("active", tab==="lista");
   document.getElementById("panel-rota").classList.toggle("active", tab==="rota");
   var showMapUI = tab==="mapa";
-  document.getElementById("mode-switch").style.display = showMapUI?"flex":"none";
+  document.getElementById("edit-fab").style.display = showMapUI?"flex":"none";
   document.getElementById("locate-btn").style.display = showMapUI?"block":"none";
   document.getElementById("theme-toggle").style.display = showMapUI?"block":"none";
   if(tab==="mapa") updateDrawBanner(); else document.getElementById("draw-banner").classList.remove("show");
