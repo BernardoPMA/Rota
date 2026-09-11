@@ -36,21 +36,21 @@
   button{font-family:inherit;}
   #map{position:fixed; inset:0; z-index:0; background:#0A0C0F;}
   /* mapa base invertido no modo escuro (a fonte OSM só existe em versão clara) */
-  body:not(.light) .leaflet-tile-pane{ filter:invert(1) hue-rotate(180deg) brightness(0.88) contrast(1.08) saturate(0.35); }
+  body:not(.light).base-osm .leaflet-tile-pane{ filter:invert(1) hue-rotate(180deg) brightness(0.88) contrast(1.08) saturate(0.35); }
 
-  #edit-fab{
+  #edit-menu-btn{
     display:flex; align-items:center; justify-content:center;
-    position:fixed; left:50%; transform:translateX(-50%); top:calc(var(--safe-top) + 12px); z-index:10;
+    position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 84px);
     width:46px; height:46px; border-radius:50%; border:1px solid var(--border);
     background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
     color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms, background 150ms, color 150ms;
   }
-  #edit-fab svg{width:19px; height:19px;}
-  #edit-fab.active{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
-  #edit-fab:active, #locate-btn:active, #theme-toggle:active{transform:scale(0.92);}
+  #edit-menu-btn svg{width:19px; height:19px;}
+  #edit-menu-btn.active{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
+  #edit-menu-btn:active, #locate-btn:active, #theme-toggle:active{transform:scale(0.92);}
 
   #draw-banner{
-    position:fixed; left:12px; right:12px; z-index:10; top:calc(var(--safe-top) + 68px);
+    position:fixed; left:12px; right:12px; z-index:10; top:calc(var(--safe-top) + 12px);
     background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
     border:1px solid var(--border); border-radius:var(--radius); padding:14px; display:none;
     box-shadow:0 8px 24px rgba(0,0,0,0.3);
@@ -65,9 +65,9 @@
   .btn-ghost{background:var(--surface-2); color:var(--text);}
   .btn-danger{background:transparent; color:var(--danger); border:1px solid var(--danger) !important;}
 
-  #locate-btn{display:flex; align-items:center; justify-content:center; position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 84px); width:46px; height:46px; border-radius:50%; border:1px solid var(--border); background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms;}
+  #locate-btn{display:flex; align-items:center; justify-content:center; position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 138px); width:46px; height:46px; border-radius:50%; border:1px solid var(--border); background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms;}
   #locate-btn svg, #theme-toggle svg{width:20px; height:20px;}
-  #theme-toggle{display:flex; align-items:center; justify-content:center; position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 138px); width:46px; height:46px; border-radius:50%; border:1px solid var(--border); background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms;}
+  #theme-toggle{display:flex; align-items:center; justify-content:center; position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 192px); width:46px; height:46px; border-radius:50%; border:1px solid var(--border); background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms;}
   #net-banner{position:fixed; left:12px; right:12px; z-index:15; top:calc(var(--safe-top) + 68px); background:rgba(30,25,20,0.97); border:1px solid var(--oneway); border-radius:var(--radius); padding:14px; display:none;}
   #net-banner.show{display:block;}
   #net-banner p{margin:0 0 12px; font-size:13.5px; color:var(--text); line-height:1.5;}
@@ -98,7 +98,9 @@
   .badge{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap;}
   .badge-twoway{background:rgba(103,232,249,0.15); color:var(--twoway);}
   .badge-oneway{background:rgba(251,113,133,0.15); color:var(--oneway);}
-  .icon-btn{background:none; border:none; color:var(--text-muted); padding:6px; font-size:18px;}
+  .icon-btn{display:inline-flex; align-items:center; justify-content:center; background:var(--surface-2); border:none; color:var(--text-muted); width:34px; height:34px; border-radius:50%; flex:none; transition:transform 150ms;}
+  .icon-btn svg{width:16px; height:16px;}
+  .icon-btn:active{transform:scale(0.9);}
   .icon-btn.danger{color:var(--danger);}
   .section-title{font-size:13px; color:var(--text-muted); font-weight:700; margin:22px 0 10px;}
   .section-title:first-child{margin-top:0;}
@@ -139,6 +141,17 @@
   .edit-menu-row:active{transform:scale(0.98);}
   .edit-menu-row svg{width:20px; height:20px; flex:none; color:var(--accent);}
   .edit-menu-row.danger-row svg{color:var(--danger);}
+
+  .street-label{
+    display:inline-flex; align-items:center; gap:4px; width:max-content;
+    font-size:11.5px; font-weight:600; padding:4px 10px 4px 8px; border-radius:8px; white-space:nowrap;
+    background:var(--surface-blur); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    color:var(--label-text); box-shadow:0 2px 8px rgba(0,0,0,0.35);
+    border-left:3px solid var(--twoway);
+  }
+  .street-label.label-oneway{border-left-color:var(--oneway);}
+  .street-label.next-stop{outline:2px solid var(--accent);}
+  .street-dir-arrow{font-size:10.5px; opacity:0.8;}
   .endpoint-flag{font-size:22px; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.5));}
   .user-loc-wrap{width:52px; height:52px; position:relative;}
   .user-loc-cone{
@@ -169,10 +182,6 @@
 
 <div id="map"></div>
 
-<button id="edit-fab" title="Editar mapa">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-</button>
-
 <div id="draw-banner">
   <div class="draw-head">
     <p id="draw-banner-text"></p>
@@ -187,6 +196,10 @@
 <button id="theme-toggle" title="Modo claro/escuro">
   <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
 </button>
+<button id="edit-menu-btn" title="Editar mapa">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+</button>
+
 
 <div id="net-banner">
   <p id="net-banner-text">As imagens do mapa não carregaram. Isso costuma acontecer quando o arquivo é aberto numa pré-visualização sem internet liberada, em vez do Safari.</p>
@@ -440,7 +453,7 @@ function closeModal(){
 document.getElementById("modal-overlay").addEventListener("click", function(e){ if(e.target.id==="modal-overlay") closeModal(); });
 
 /* ============================================================
-   TEMA (o tile é sempre o mesmo; escuro = filtro CSS invertido)
+   TEMA (também decide o estilo do mapa "limpo")
 ============================================================ */
 function applyTheme(themeMode){
   document.body.classList.toggle("light", themeMode==="light");
@@ -449,17 +462,27 @@ function applyTheme(themeMode){
     ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>'
     : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>';
   safeSet("theme-v1", themeMode);
+  if(map) rebuildBaseLayer();
 }
 document.getElementById("theme-toggle").addEventListener("click", function(){ applyTheme(isLight()?"dark":"light"); });
 
 /* ============================================================
-   MAPA (OpenStreetMap padrão — cobertura completa, sem chave)
+   MAPA — base "limpo" (Esri Canvas, sem nomes/ícones, sem chave)
+   com opção de trocar para OSM (com nomes) se a cobertura falhar
 ============================================================ */
+var baseKind = "clean"; // "clean" (Esri Canvas) | "labeled" (OSM)
 function makeBaseLayer(){
-  var l = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom:20, maxNativeZoom:19, subdomains:"abc", detectRetina:true,
-    attribution:"&copy; OpenStreetMap contributors"
-  });
+  var l;
+  if(baseKind==="labeled"){
+    l = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom:20, maxNativeZoom:19, subdomains:"abc", detectRetina:true, attribution:"&copy; OpenStreetMap contributors"
+    });
+  } else {
+    var style = isLight() ? "World_Light_Gray_Base" : "World_Dark_Gray_Base";
+    l = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"+style+"/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom:20, maxNativeZoom:16, detectRetina:true, attribution:"Tiles &copy; Esri"
+    });
+  }
   l.on("tileerror", onTileError);
   l.on("tileload", onTileOk);
   return l;
@@ -473,11 +496,22 @@ function onTileError(){
 }
 function onTileOk(){ tileOkCount++; }
 document.getElementById("net-banner-close").addEventListener("click", function(){ document.getElementById("net-banner").classList.remove("show"); });
+function rebuildBaseLayer(){
+  if(baseLayer){ map.removeLayer(baseLayer); baseLayer=null; }
+  tileErrorCount=0; tileOkCount=0; netBannerShown=false;
+  document.getElementById("net-banner").classList.remove("show");
+  document.body.classList.toggle("base-osm", baseKind==="labeled");
+  baseLayer = makeBaseLayer();
+  baseLayer.addTo(map);
+}
+function setBaseKind(kind){
+  baseKind = kind;
+  safeSet("basekind-v1", kind);
+  if(map) rebuildBaseLayer();
+}
 
 function initMap(){
   map = L.map("map", {zoomControl:false, attributionControl:true, maxZoom:20}).setView([-23.5505,-46.6333], 16);
-  baseLayer = makeBaseLayer();
-  baseLayer.addTo(map);
 
   streetLayerGroup = L.layerGroup().addTo(map);
   houseLayerGroup = L.layerGroup().addTo(map);
@@ -575,7 +609,7 @@ function redrawDrawing(){
 /* ============================================================
    MODO DE INTERAÇÃO
 ============================================================ */
-document.getElementById("edit-fab").addEventListener("click", openEditMenu);
+document.getElementById("edit-menu-btn").addEventListener("click", openEditMenu);
 function openEditMenu(){
   openModal(
     '<h2>Editar mapa</h2>'+
@@ -591,12 +625,20 @@ function openEditMenu(){
     '<button type="button" class="edit-menu-row" id="menu-edit-el">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'+
       'Editar elemento</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-toggle-base">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg>'+
+      '<span id="menu-toggle-base-text">'+(baseKind==="labeled"?"Usar mapa limpo (padrão)":"Mapa com nomes (se faltar cobertura)")+'</span></button>'+
     '<button type="button" class="btn-ghost" id="menu-close" style="width:100%;border:none;border-radius:12px;padding:13px;margin-top:4px;">Cancelar</button>'
   );
   document.getElementById("menu-add-bairro").addEventListener("click", function(){ closeModal(); setMode("bairro"); });
   document.getElementById("menu-add-street").addEventListener("click", function(){ closeModal(); setMode("street"); });
   document.getElementById("menu-add-house").addEventListener("click", function(){ closeModal(); setMode("house"); });
   document.getElementById("menu-edit-el").addEventListener("click", function(){ closeModal(); setMode("edit"); });
+  document.getElementById("menu-toggle-base").addEventListener("click", function(){
+    setBaseKind(baseKind==="labeled" ? "clean" : "labeled");
+    closeModal();
+    showToast(baseKind==="labeled" ? "Mapa com nomes ativado" : "Mapa limpo ativado");
+  });
   document.getElementById("menu-close").addEventListener("click", closeModal);
 }
 document.getElementById("draw-banner-close").addEventListener("click", function(){
@@ -606,7 +648,7 @@ document.getElementById("draw-banner-close").addEventListener("click", function(
 function setMode(m){
   if((mode==="street"||mode==="bairro") && m!==mode) cancelDrawing();
   mode = m;
-  document.getElementById("edit-fab").classList.toggle("active", mode!=="view");
+  document.getElementById("edit-menu-btn").classList.toggle("active", mode!=="view");
   updateDrawBanner();
 }
 function updateDrawBanner(){
@@ -834,6 +876,17 @@ function renderStreetsOnMap(){
     var latlngs = s.points.map(function(p){return [p.lat,p.lng];});
     var line = L.polyline(latlngs, {className:"street-line "+(s.twoWay?"street-twoway":"street-oneway")+(isNext?" next-stop":""), weight: isNext?6:4, opacity:0.9}).addTo(streetLayerGroup);
     line.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
+
+    var nameStr = escapeHtml(s.names.join(" / ")) + (!s.twoWay ? ' <span class="street-dir-arrow">➜</span>' : '');
+    var cls = "street-label "+(s.twoWay?"label-twoway":"label-oneway")+(isNext?" next-stop":"");
+    for(var i=0;i<s.points.length-1;i++){
+      var a=s.points[i], b=s.points[i+1];
+      var mid=[(a.lat+b.lat)/2, (a.lng+b.lng)/2];
+      var angle = textAngleFor(a,b);
+      var labelIcon = L.divIcon({className:"", html:'<div class="'+cls+'" style="transform:translate(-50%,-50%) rotate('+angle+'deg);">'+nameStr+'</div>', iconSize:[0,0]});
+      var lm = L.marker(mid,{icon:labelIcon}).addTo(streetLayerGroup);
+      lm.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
+    }
   });
 }
 function renderHousesOnMap(){
@@ -885,7 +938,7 @@ function setTab(tab){
   document.getElementById("panel-lista").classList.toggle("active", tab==="lista");
   document.getElementById("panel-rota").classList.toggle("active", tab==="rota");
   var showMapUI = tab==="mapa";
-  document.getElementById("edit-fab").style.display = showMapUI?"flex":"none";
+  document.getElementById("edit-menu-btn").style.display = showMapUI?"flex":"none";
   document.getElementById("locate-btn").style.display = showMapUI?"block":"none";
   document.getElementById("theme-toggle").style.display = showMapUI?"block":"none";
   if(tab==="mapa") updateDrawBanner(); else document.getElementById("draw-banner").classList.remove("show");
@@ -901,19 +954,24 @@ function setTab(tab){
    PAINEL LISTA
 ============================================================ */
 document.getElementById("search-input").addEventListener("input", renderListaPanel);
+var ICON_LOCATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>';
+var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+
 function renderListaPanel(){
   var q = document.getElementById("search-input").value.trim().toLowerCase();
   var sHtml = "";
   var filteredStreets = streets.filter(function(s){return s.names.join(" ").toLowerCase().includes(q);});
   if(streets.length===0){
-    sHtml = '<div class="section-title">Ruas</div><div class="empty">Nenhuma rua cadastrada ainda. Use o modo "Rua" no mapa.</div>';
+    sHtml = '<div class="section-title">Ruas</div><div class="empty">Nenhuma rua cadastrada ainda. Use o menu de editar no mapa.</div>';
   } else {
     sHtml = '<div class="section-title">Ruas ('+streets.length+')</div>';
     filteredStreets.forEach(function(s){
+      var nb = neighborhoodOfPoint(representativePointForStreet(s));
       sHtml += '<div class="card"><div class="card-row">'+
-        '<div class="grow"><p class="card-title">'+escapeHtml(s.names.join(" / "))+'</p><p class="card-meta">'+countHousesForStreet(s.id)+' casas</p></div>'+
+        '<div class="grow"><p class="card-title">'+escapeHtml(s.names.join(" / "))+'</p>'+
+        '<p class="card-meta">'+countHousesForStreet(s.id)+' casas'+(nb?' · '+escapeHtml(nb.name):'')+'</p></div>'+
         '<span class="badge '+(s.twoWay?"badge-twoway":"badge-oneway")+'">'+(s.twoWay?"Mão dupla":"Sentido único")+'</span>'+
-        '<button class="icon-btn" data-locate-street="'+s.id+'">◎</button></div></div>';
+        '<button class="icon-btn" data-locate-street="'+s.id+'">'+ICON_LOCATE+'</button></div></div>';
     });
   }
   document.getElementById("list-streets").innerHTML = sHtml;
@@ -921,14 +979,17 @@ function renderListaPanel(){
   var hHtml = "";
   var filteredHouses = houses.filter(function(h){ return h.number.toLowerCase().includes(q) || streetLabelForHouse(h).toLowerCase().includes(q); });
   if(houses.length===0){
-    hHtml = '<div class="section-title">Casas</div><div class="empty">Nenhuma casa cadastrada ainda. Use o modo "Casa" no mapa.</div>';
+    hHtml = '<div class="section-title">Casas</div><div class="empty">Nenhuma casa cadastrada ainda. Use o menu de editar no mapa.</div>';
   } else {
     hHtml = '<div class="section-title">Casas ('+houses.length+')</div>';
     filteredHouses.forEach(function(h){
       var label = streetLabelForHouse(h);
+      var nb = neighborhoodOfPoint({lat:h.lat,lng:h.lng});
       hHtml += '<div class="card"><div class="card-row">'+
-        '<div class="grow"><p class="card-title">Nº '+escapeHtml(h.number)+'</p><p class="card-meta">'+(label?escapeHtml(label):"sem rua vinculada")+'</p></div>'+
-        '<button class="icon-btn" data-locate-house="'+h.id+'">◎</button><button class="icon-btn danger" data-delete-house="'+h.id+'">✕</button></div></div>';
+        '<div class="grow"><p class="card-title">Nº '+escapeHtml(h.number)+'</p>'+
+        '<p class="card-meta">'+(label?escapeHtml(label):"sem rua vinculada")+(nb?' · '+escapeHtml(nb.name):'')+'</p></div>'+
+        '<button class="icon-btn" data-locate-house="'+h.id+'">'+ICON_LOCATE+'</button>'+
+        '<button class="icon-btn danger" data-delete-house="'+h.id+'">'+ICON_TRASH+'</button></div></div>';
     });
   }
   document.getElementById("list-houses").innerHTML = hHtml;
@@ -1314,6 +1375,7 @@ document.getElementById("exec-stop-route").addEventListener("click", function(){
 ============================================================ */
 async function init(){
   initMap();
+  baseKind = await safeGet("basekind-v1", "clean");
   var savedTheme = await safeGet("theme-v1", "dark");
   applyTheme(savedTheme);
 
