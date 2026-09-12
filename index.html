@@ -409,12 +409,17 @@ function normalizeAppData(data){
   if(!data.settings || typeof data.settings!=="object") data.settings = {};
   if(!data.settings.theme) data.settings.theme = "dark";
   if(!data.settings.baseKind) data.settings.baseKind = "labeled";
-  // migração única: quem estava preso no mapa "limpo" (Esri, com o bug de
-  // cobertura) passa a usar o OSM confiável por padrão. Só acontece uma vez —
-  // depois disso, qualquer escolha manual do usuário é sempre respeitada.
+  // migração 1 (já concluída pra quem já usava o app): quem estava preso no
+  // mapa "limpo" antigo (Esri, com bug de cobertura) passou a usar OSM.
   if(!data.settings.baseKindMigratedV2){
     data.settings.baseKind = "labeled";
     data.settings.baseKindMigratedV2 = true;
+  }
+  // migração 2: "clean" agora é CARTO sem rótulos (cai pro OSM sozinho se a
+  // chave ainda não estiver configurada, então é seguro deixar como padrão).
+  if(!data.settings.baseKindMigratedV3){
+    data.settings.baseKind = "clean";
+    data.settings.baseKindMigratedV3 = true;
   }
   return data;
 }
@@ -596,40 +601,46 @@ function applyTheme(themeMode){
 document.getElementById("theme-toggle").addEventListener("click", function(){ applyTheme(isLight()?"dark":"light"); });
 
 /* ============================================================
-   MAPA — base "limpo" (Esri Canvas, sem nomes/ícones, sem chave)
-   com opção de trocar para OSM (com nomes) se a cobertura falhar
+   MAPA — base
+   -----------------------------------------------------------
+   ⚠️ COLE SUA CHAVE GRATUITA DA CARTO AQUI (sem conta, ~1 min):
+   https://carto.com/basemaps/apikey
 ============================================================ */
+var CARTO_API_KEY = "cb1_3i8e_1_82d9bbfb827886a8dca38ed5";
+
 /* -----------------------------------------------------------
-   Duas fontes de tile, nenhuma com chave de API:
+   Duas fontes de tile:
 
-   "labeled" (OpenStreetMap padrão) — PADRÃO agora.
-     Cobertura mundial completa e uniforme (dado vetorial da própria
-     comunidade OSM, renderizado no servidor). Zoom real garantido
-     até o nível 19 em qualquer lugar do planeta — não existe o
-     "tile não disponível" que via no satélite/canvas da Esri.
-     Limitação: vem com nomes de rua e ícones de lugar de fábrica
-     (não tem versão "sem nome" oficial e gratuita sem chave).
-     Também não oferece tile retina/@2x — é uma limitação do
-     próprio serviço público, não uma configuração faltando aqui.
+   "clean" (CARTO Positron / Dark Matter, sem rótulos) — PADRÃO.
+     É a única fonte gratuita que entrega ruas, quarteirões,
+     construções, água e áreas verdes com cor de verdade (não é
+     cinza monocromático) SEM nenhum nome/rótulo, com cobertura
+     mundial completa baseada em dado OSM — não tem o "tile não
+     disponível" que a Esri tinha. Tem par claro/escuro nativo
+     (não precisa de filtro CSS) e retina de verdade.
+     Exige uma chave de API gratuita (sem conta, sem cartão,
+     5 milhões de requisições/mês de cortesia) — sem ela, a CARTO
+     carimba "API KEY REQUIRED" em cima do tile. Por isso: se
+     CARTO_API_KEY estiver vazio, o app cai automaticamente pro
+     OSM abaixo, pra nunca mostrar um tile quebrado.
 
-   "clean" (Esri Canvas, sem nomes) — alternativa manual.
-     Visual mais limpo, mas a Esri não garante a mesma cobertura em
-     zoom alto fora de grandes centros urbanos; em cidades menores
-     pode aparecer "Map data not yet available" acima do zoom 16.
-     Por isso deixei de ser o padrão, mas continua disponível no
-     menu de editar pra quem preferir e estiver numa área coberta.
+   "labeled" (OpenStreetMap padrão) — reserva/fallback.
+     Cobertura mundial completa, sem chave nenhuma, mas vem com
+     nomes de rua e ícones de lugar de fábrica (usa filtro CSS
+     pra imitar modo escuro, já que não tem par escuro nativo).
 ----------------------------------------------------------- */
-var baseKind = "labeled"; // espelha settings.baseKind; ver setBaseKind()
+var baseKind = "clean"; // espelha settings.baseKind; ver setBaseKind()
 function makeBaseLayer(){
   var l;
-  if(baseKind==="clean"){
-    var style = isLight() ? "World_Light_Gray_Base" : "World_Dark_Gray_Base";
-    l = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"+style+"/MapServer/tile/{z}/{y}/{x}", {
-      tileSize:256, zoomOffset:0,
-      maxZoom:16, maxNativeZoom:16, // não force zoom além do que a Esri realmente garante
-      attribution:"Tiles &copy; Esri"
+  if(baseKind==="clean" && CARTO_API_KEY){
+    var style = isLight() ? "light_nolabels" : "dark_nolabels";
+    l = L.tileLayer("https://{s}.basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}{r}.png?key="+CARTO_API_KEY, {
+      tileSize:256, zoomOffset:0, detectRetina:true,
+      maxZoom:20, maxNativeZoom:20, // teto real documentado pela CARTO
+      subdomains:"abcd", attribution:"&copy; OpenStreetMap contributors &copy; CARTO"
     });
   } else {
+    if(baseKind==="clean" && !CARTO_API_KEY) console.warn("CARTO_API_KEY vazio — usando OSM como reserva até a chave ser configurada.");
     l = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       tileSize:256, zoomOffset:0,
       maxZoom:19, maxNativeZoom:19, // 19 é o teto real e documentado do OSM padrão
@@ -642,8 +653,6 @@ function makeBaseLayer(){
 }
 function onTileError(){
   tileErrorCount++;
-  // isso só deve disparar por falha de rede de verdade agora — o OSM não
-  // devolve um tile de "indisponível" como o serviço da Esri fazia.
   if(tileErrorCount>=6 && tileOkCount===0 && !netBannerShown){
     netBannerShown = true;
     document.getElementById("net-banner").classList.add("show");
@@ -655,7 +664,10 @@ function rebuildBaseLayer(){
   if(baseLayer){ map.removeLayer(baseLayer); baseLayer=null; }
   tileErrorCount=0; tileOkCount=0; netBannerShown=false;
   document.getElementById("net-banner").classList.remove("show");
-  document.body.classList.toggle("base-osm", baseKind==="labeled");
+  // o filtro CSS de modo escuro só é necessário pro OSM (sem par escuro nativo);
+  // a CARTO já entrega dark_nolabels de verdade, sem precisar de filtro.
+  var usingOsmFallback = (baseKind==="labeled") || (baseKind==="clean" && !CARTO_API_KEY);
+  document.body.classList.toggle("base-osm", usingOsmFallback);
   baseLayer = makeBaseLayer();
   baseLayer.addTo(map);
 }
@@ -668,7 +680,7 @@ function setBaseKind(kind){
 
 
 function initMap(){
-  map = L.map("map", {zoomControl:false, attributionControl:true, maxZoom:19}).setView([-23.5505,-46.6333], 16);
+  map = L.map("map", {zoomControl:false, attributionControl:true, maxZoom:20}).setView([-23.5505,-46.6333], 16);
 
   streetLayerGroup = L.layerGroup().addTo(map);
   houseLayerGroup = L.layerGroup().addTo(map);
@@ -784,7 +796,7 @@ function openEditMenu(){
       'Editar elemento</button>'+
     '<button type="button" class="edit-menu-row" id="menu-toggle-base">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg>'+
-      '<span id="menu-toggle-base-text">'+(baseKind==="labeled"?"Mapa sem nomes (pode faltar em algumas áreas)":"Voltar pro mapa padrão (mais confiável)")+'</span></button>'+
+      '<span id="menu-toggle-base-text">'+(baseKind==="labeled"?"Voltar pro mapa sem rótulos (padrão)":"Mapa com nomes (OpenStreetMap)")+'</span></button>'+
     '<button type="button" class="btn-ghost" id="menu-close" style="width:100%;border:none;border-radius:12px;padding:13px;margin-top:4px;">Cancelar</button>'
   );
   document.getElementById("menu-add-bairro").addEventListener("click", function(){ closeModal(); setMode("bairro"); });
@@ -794,7 +806,7 @@ function openEditMenu(){
   document.getElementById("menu-toggle-base").addEventListener("click", function(){
     setBaseKind(baseKind==="labeled" ? "clean" : "labeled");
     closeModal();
-    showToast(baseKind==="labeled" ? "Mapa padrão (OpenStreetMap) ativado" : "Mapa sem nomes (Esri) ativado");
+    showToast(baseKind==="labeled" ? "Mapa com nomes (OpenStreetMap) ativado" : "Mapa sem rótulos ativado");
   });
   document.getElementById("menu-close").addEventListener("click", closeModal);
 }
