@@ -47,7 +47,17 @@
   }
   #edit-menu-btn svg{width:19px; height:19px;}
   #edit-menu-btn.active{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
-  #edit-menu-btn:active, #locate-btn:active, #theme-toggle:active{transform:scale(0.92);}
+  #edit-menu-btn:active, #locate-btn:active, #theme-toggle:active, #north-btn:active{transform:scale(0.92);}
+  #north-btn{
+    display:flex; align-items:center; justify-content:center;
+    position:fixed; right:14px; z-index:10; top:calc(var(--safe-top) + 12px);
+    width:38px; height:38px; border-radius:50%; border:1px solid var(--border);
+    background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    color:var(--oneway); box-shadow:0 4px 14px rgba(0,0,0,0.3);
+    opacity:0; pointer-events:none; transition:opacity 180ms, transform 150ms;
+  }
+  #north-btn svg{width:16px; height:16px;}
+  #north-btn.show{opacity:1; pointer-events:auto;}
 
   #draw-banner{
     position:fixed; left:12px; right:12px; z-index:10; top:calc(var(--safe-top) + 12px);
@@ -199,6 +209,9 @@
 <button id="edit-menu-btn" title="Editar mapa">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
 </button>
+<button id="north-btn" title="Virar para o norte">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L16 14 L12 11 L8 14 Z" fill="currentColor" stroke="none"/></svg>
+</button>
 
 
 <div id="net-banner">
@@ -290,6 +303,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.7/dist/leaflet-rotate.js"></script>
 <script>
 (function(){
 "use strict";
@@ -317,6 +331,12 @@ var streetLayerGroup, houseLayerGroup, routeLineLayer, endpointLayerGroup, neigh
 var userMarker = null;
 var watchId = null;
 var lastHeading = null;
+var followHeading = false;      // true = mapa acompanha a direção da bússola
+var smoothedHeading = null;     // heading já suavizado (evita tremedeira)
+var latestRawHeading = null;    // última leitura bruta do sensor
+var headingLoopRunning = false; // evita duplicar a malha de requestAnimationFrame
+var orientationPermissionState = "unknown"; // unknown | granted | denied | unavailable
+var suppressRotateDetection = false; // true durante setBearing feito pelo próprio app
 var tileErrorCount = 0;
 var tileOkCount = 0;
 var netBannerShown = false;
@@ -680,7 +700,10 @@ function setBaseKind(kind){
 
 
 function initMap(){
-  map = L.map("map", {zoomControl:false, attributionControl:true, maxZoom:20}).setView([-23.5505,-46.6333], 16);
+  map = L.map("map", {
+    zoomControl:false, attributionControl:true, maxZoom:20,
+    rotate:true, bearing:0, touchRotate:true, rotateControl:false
+  }).setView([-23.5505,-46.6333], 16);
 
   streetLayerGroup = L.layerGroup().addTo(map);
   houseLayerGroup = L.layerGroup().addTo(map);
@@ -689,59 +712,158 @@ function initMap(){
   neighborhoodLayerGroup = L.layerGroup().addTo(map);
 
   map.on("click", onMapClick);
+
+  // gira manualmente (toque com dois dedos) -> sai do modo de acompanhamento
+  map.on("rotate", function(){
+    if(!suppressRotateDetection && followHeading){
+      followHeading = false;
+    }
+    updateNorthButtonVisibility();
+  });
+
   startLiveLocation();
 }
 
-/* ---- localização ao vivo + bússola (cone de direção) ---- */
-function placeUserMarker(ll, heading){
+/* ============================================================
+   LOCALIZAÇÃO AO VIVO + BÚSSOLA + ACOMPANHAMENTO DE DIREÇÃO
+   -----------------------------------------------------------
+   followHeading: true enquanto o mapa deve girar seguindo pra onde
+   o usuário está apontando (ativado pelo botão de localização,
+   desativado automaticamente se o usuário girar o mapa manualmente).
+
+   smoothedHeading: heading da bússola já suavizado (média móvel
+   angular, tratando corretamente a virada 359°→0°) — evita
+   tremedeira. Atualizado numa malha de requestAnimationFrame, não
+   a cada evento bruto do sensor (que pode disparar bem mais rápido
+   que a tela consegue redesenhar).
+============================================================ */
+function shortAngleDist(a0, a1){
+  var max = 360, da = (a1 - a0) % max;
+  return (2*da % max) - da;
+}
+function applyBearing(deg){
+  suppressRotateDetection = true;
+  map.setBearing(deg);
+  suppressRotateDetection = false;
+}
+function animateBearingTo(target, duration){
+  var start = map.getBearing();
+  var delta = shortAngleDist(start, target);
+  var t0 = performance.now();
+  function step(now){
+    var p = Math.min(1, (now - t0) / duration);
+    applyBearing(start + delta * p);
+    if(p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function placeUserMarker(ll, withCone){
   var html = '<div class="user-loc-wrap">'+
-    (heading!==null && heading!==undefined ? '<div class="user-loc-cone" style="transform:rotate('+heading+'deg);"></div>' : '')+
+    (withCone ? '<div class="user-loc-cone"></div>' : '')+
     '<div class="user-loc-dot"></div></div>';
   var icon = L.divIcon({className:"", html:html, iconSize:[52,52], iconAnchor:[26,26]});
   if(userMarker){ userMarker.setLatLng(ll); userMarker.setIcon(icon); }
   else { userMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map); }
+  if(withCone) updateConeRotation();
+}
+function updateConeRotation(){
+  if(!userMarker || smoothedHeading===null) return;
+  var el = userMarker.getElement();
+  var cone = el && el.querySelector(".user-loc-cone");
+  if(cone) cone.style.transform = "rotate("+(smoothedHeading - map.getBearing())+"deg)";
 }
 function handleOrientation(e){
   var heading = (e.webkitCompassHeading!==undefined && e.webkitCompassHeading!==null) ? e.webkitCompassHeading
     : (e.alpha!==null && e.alpha!==undefined ? (360-e.alpha) : null);
-  if(heading!==null && !isNaN(heading)){
-    lastHeading = heading;
-    if(userMarker){ var ll = userMarker.getLatLng(); placeUserMarker(ll, heading); }
+  if(heading!==null && !isNaN(heading)) latestRawHeading = heading;
+}
+function startHeadingLoop(){
+  if(headingLoopRunning) return; // nunca duplica a malha
+  headingLoopRunning = true;
+  var lastAppliedBearing = null;
+  function loop(){
+    if(latestRawHeading!==null){
+      var hadHeadingBefore = smoothedHeading!==null;
+      smoothedHeading = hadHeadingBefore
+        ? (smoothedHeading + shortAngleDist(smoothedHeading, latestRawHeading) * 0.18 + 360) % 360
+        : latestRawHeading;
+      lastHeading = smoothedHeading;
+      if(!hadHeadingBefore && userMarker){
+        placeUserMarker(userMarker.getLatLng(), true); // primeira leitura: recria o ícone já com o cone
+      } else {
+        updateConeRotation(); // só ajusta o transform, sem recriar nada — leve
+      }
+      if(followHeading && (lastAppliedBearing===null || Math.abs(shortAngleDist(lastAppliedBearing, smoothedHeading))>0.4)){
+        applyBearing(smoothedHeading);
+        lastAppliedBearing = smoothedHeading;
+        updateConeRotation();
+      }
+    }
+    requestAnimationFrame(loop);
   }
+  requestAnimationFrame(loop);
 }
 function startLiveLocation(){
   if(navigator.geolocation){
     watchId = navigator.geolocation.watchPosition(function(pos){
       var ll=[pos.coords.latitude,pos.coords.longitude];
-      placeUserMarker(ll, pos.coords.heading!==null && !isNaN(pos.coords.heading) ? pos.coords.heading : lastHeading);
+      placeUserMarker(ll, smoothedHeading!==null);
       if(!startLiveLocation._centered){ map.setView(ll,17); startLiveLocation._centered=true; }
     }, function(){}, {enableHighAccuracy:true});
   }
-  try{
-    if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
-      // no iOS isso precisa de um gesto do usuário; tentamos direto e, se falhar,
-      // o botão de localizar tenta de novo.
-      DeviceOrientationEvent.requestPermission().then(function(state){
-        if(state==="granted") window.addEventListener("deviceorientation", handleOrientation);
-      }).catch(function(){});
-    } else if(typeof DeviceOrientationEvent!=="undefined"){
-      window.addEventListener("deviceorientation", handleOrientation);
-    }
-  }catch(e){}
+  // Importante: NÃO pedimos permissão de bússola aqui. No iOS, requestPermission()
+  // só funciona (e não "queima" silenciosamente) quando chamado dentro de um gesto
+  // real do usuário — por isso isso só acontece no toque do botão de localização.
 }
-document.getElementById("locate-btn").addEventListener("click", function(){
+function ensureCompassPermission(callback){
+  if(orientationPermissionState==="granted" || orientationPermissionState==="denied" || orientationPermissionState==="unavailable"){
+    callback(); return;
+  }
   if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
     DeviceOrientationEvent.requestPermission().then(function(state){
-      if(state==="granted") window.addEventListener("deviceorientation", handleOrientation);
-    }).catch(function(){});
+      orientationPermissionState = state==="granted" ? "granted" : "denied";
+      if(orientationPermissionState==="granted"){
+        window.addEventListener("deviceorientation", handleOrientation);
+        startHeadingLoop();
+      }
+      callback();
+    }).catch(function(){ orientationPermissionState="denied"; callback(); });
+  } else if(typeof DeviceOrientationEvent!=="undefined"){
+    orientationPermissionState = "granted"; // navegadores que não exigem o gesto (ex.: Chrome/Android)
+    window.addEventListener("deviceorientation", handleOrientation);
+    startHeadingLoop();
+    callback();
+  } else {
+    orientationPermissionState = "unavailable";
+    callback();
   }
-  if(!navigator.geolocation) return showToast("Localização não disponível.");
-  navigator.geolocation.getCurrentPosition(function(pos){
-    var ll=[pos.coords.latitude,pos.coords.longitude];
-    map.setView(ll,17);
-    placeUserMarker(ll, lastHeading);
-  }, function(){ showToast("Não foi possível obter sua localização."); });
+}
+function updateNorthButtonVisibility(){
+  var btn = document.getElementById("north-btn");
+  if(!btn) return;
+  var bearing = map.getBearing();
+  btn.classList.toggle("show", Math.abs(shortAngleDist(0,bearing))>1);
+}
+document.getElementById("locate-btn").addEventListener("click", function(){
+  followHeading = true;
+  ensureCompassPermission(function(){
+    if(orientationPermissionState!=="granted") followHeading = false; // sem bússola, nada a seguir
+    if(!navigator.geolocation) return showToast("Localização não disponível.");
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var ll=[pos.coords.latitude,pos.coords.longitude];
+      map.setView(ll,17);
+      placeUserMarker(ll, smoothedHeading!==null);
+      if(followHeading && smoothedHeading!==null) animateBearingTo(smoothedHeading, 300);
+      updateNorthButtonVisibility();
+    }, function(){ showToast("Não foi possível obter sua localização."); });
+  });
 });
+document.getElementById("north-btn").addEventListener("click", function(){
+  followHeading = false;
+  animateBearingTo(0, 350);
+});
+
 
 function onMapClick(e){
   if(mode==="street" || mode==="bairro"){
@@ -1108,6 +1230,8 @@ function setTab(tab){
   document.getElementById("panel-rota").classList.toggle("active", tab==="rota");
   var showMapUI = tab==="mapa";
   document.getElementById("edit-menu-btn").style.display = showMapUI?"flex":"none";
+  document.getElementById("north-btn").style.display = showMapUI?"flex":"none";
+  if(showMapUI && map) updateNorthButtonVisibility();
   document.getElementById("locate-btn").style.display = showMapUI?"block":"none";
   document.getElementById("theme-toggle").style.display = showMapUI?"block":"none";
   if(tab==="mapa") updateDrawBanner(); else document.getElementById("draw-banner").classList.remove("show");
