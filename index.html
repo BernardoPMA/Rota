@@ -169,7 +169,9 @@
     clip-path:polygon(50% 100%, 18% 6%, 82% 6%);
     background:linear-gradient(to top, rgba(59,130,246,0.5), rgba(59,130,246,0.02));
     transform-origin:50% 100%;
+    opacity:0; transition:opacity 250ms;
   }
+  .user-loc-cone.has-heading{opacity:1;}
   .user-loc-dot{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:#3B82F6; border:2.5px solid #fff; box-shadow:0 0 0 4px rgba(59,130,246,0.22), 0 2px 6px rgba(0,0,0,0.35);}
 
   .street-line.street-twoway{stroke:var(--twoway) !important;}
@@ -713,11 +715,15 @@ function initMap(){
 
   map.on("click", onMapClick);
 
-  // gira manualmente (toque com dois dedos) -> sai do modo de acompanhamento
+  // gira manualmente (toque com dois dedos) -> sai do modo de acompanhamento;
+  // e qualquer mudança de bearing (manual, por código ou pelo botão Norte)
+  // recalcula o cone imediatamente, no mesmo evento — é o ÚNICO lugar que
+  // faz essa conta, pra nunca ficar um frame atrasado nem duplicar a lógica.
   map.on("rotate", function(){
     if(!suppressRotateDetection && followHeading){
       followHeading = false;
     }
+    updateConeRotation();
     updateNorthButtonVisibility();
   });
 
@@ -736,6 +742,12 @@ function initMap(){
    tremedeira. Atualizado numa malha de requestAnimationFrame, não
    a cada evento bruto do sensor (que pode disparar bem mais rápido
    que a tela consegue redesenhar).
+
+   O marcador do usuário é criado UMA ÚNICA VEZ (ponto + cone já
+   nascem juntos no HTML). Atualizações de posição só chamam
+   setLatLng — nunca setIcon/removeLayer/addLayer. O cone começa
+   invisível (nunca "inventa" uma direção) e só aparece quando a
+   primeira leitura real de bússola chega.
 ============================================================ */
 function shortAngleDist(a0, a1){
   var max = 360, da = (a1 - a0) % max;
@@ -758,20 +770,33 @@ function animateBearingTo(target, duration){
   requestAnimationFrame(step);
 }
 
-function placeUserMarker(ll, withCone){
+function placeUserMarker(ll){
+  if(userMarker){
+    userMarker.setLatLng(ll); // nunca recria o ícone, só reposiciona
+    return;
+  }
   var html = '<div class="user-loc-wrap">'+
-    (withCone ? '<div class="user-loc-cone"></div>' : '')+
+    '<div class="user-loc-cone"></div>'+
     '<div class="user-loc-dot"></div></div>';
   var icon = L.divIcon({className:"", html:html, iconSize:[52,52], iconAnchor:[26,26]});
-  if(userMarker){ userMarker.setLatLng(ll); userMarker.setIcon(icon); }
-  else { userMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map); }
-  if(withCone) updateConeRotation();
+  userMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map);
+}
+function revealHeadingCone(){
+  var el = userMarker && userMarker.getElement();
+  var cone = el && el.querySelector(".user-loc-cone");
+  if(cone) cone.classList.add("has-heading");
 }
 function updateConeRotation(){
   if(!userMarker || smoothedHeading===null) return;
   var el = userMarker.getElement();
   var cone = el && el.querySelector(".user-loc-cone");
-  if(cone) cone.style.transform = "rotate("+(smoothedHeading - map.getBearing())+"deg)";
+  if(!cone) return;
+  // ângulo na TELA = heading real do aparelho MENOS o quanto o mapa já
+  // girou. Se o mapa gira e o usuário segue olhando pro mesmo lugar do
+  // mundo real, essa conta é o que garante que o cone continua "certo"
+  // em relação ao que está sendo mostrado — sem isso (ou fazendo duas
+  // vezes) o cone giraria junto/contra o mapa de forma errada.
+  cone.style.transform = "rotate("+(smoothedHeading - map.getBearing())+"deg)";
 }
 function handleOrientation(e){
   var heading = (e.webkitCompassHeading!==undefined && e.webkitCompassHeading!==null) ? e.webkitCompassHeading
@@ -789,15 +814,11 @@ function startHeadingLoop(){
         ? (smoothedHeading + shortAngleDist(smoothedHeading, latestRawHeading) * 0.18 + 360) % 360
         : latestRawHeading;
       lastHeading = smoothedHeading;
-      if(!hadHeadingBefore && userMarker){
-        placeUserMarker(userMarker.getLatLng(), true); // primeira leitura: recria o ícone já com o cone
-      } else {
-        updateConeRotation(); // só ajusta o transform, sem recriar nada — leve
-      }
+      if(!hadHeadingBefore) revealHeadingCone();
+      updateConeRotation();
       if(followHeading && (lastAppliedBearing===null || Math.abs(shortAngleDist(lastAppliedBearing, smoothedHeading))>0.4)){
-        applyBearing(smoothedHeading);
+        applyBearing(smoothedHeading); // isso já dispara 'rotate', que já recalcula o cone sozinho
         lastAppliedBearing = smoothedHeading;
-        updateConeRotation();
       }
     }
     requestAnimationFrame(loop);
@@ -808,7 +829,7 @@ function startLiveLocation(){
   if(navigator.geolocation){
     watchId = navigator.geolocation.watchPosition(function(pos){
       var ll=[pos.coords.latitude,pos.coords.longitude];
-      placeUserMarker(ll, smoothedHeading!==null);
+      placeUserMarker(ll);
       if(!startLiveLocation._centered){ map.setView(ll,17); startLiveLocation._centered=true; }
     }, function(){}, {enableHighAccuracy:true});
   }
@@ -853,7 +874,7 @@ document.getElementById("locate-btn").addEventListener("click", function(){
     navigator.geolocation.getCurrentPosition(function(pos){
       var ll=[pos.coords.latitude,pos.coords.longitude];
       map.setView(ll,17);
-      placeUserMarker(ll, smoothedHeading!==null);
+      placeUserMarker(ll);
       if(followHeading && smoothedHeading!==null) animateBearingTo(smoothedHeading, 300);
       updateNorthButtonVisibility();
     }, function(){ showToast("Não foi possível obter sua localização."); });
