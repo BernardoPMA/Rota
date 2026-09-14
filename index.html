@@ -727,6 +727,47 @@ function initMap(){
     updateNorthButtonVisibility();
   });
 
+  /* -----------------------------------------------------------
+     Correção do "atraso" das ruas durante o pinch.
+     -----------------------------------------------------------
+     Causa real (confirmada lendo o código-fonte do leaflet-rotate):
+     no pinch, o plugin chama map._move() de verdade a cada frame do
+     gesto (throttlado por requestAnimFrame) em vez do truque de CSS
+     que o Leaflet padrão usa — então o mapa-base já acompanha certo.
+     Mas o próprio autor do plugin deixou um comentário "@FIXME layer
+     drifts on map.setZoom()" bem em cima do _updateTransform do
+     Renderer SVG (o que desenha nossas ruas/rota/bairros) — ou seja,
+     é uma falha conhecida e não resolvida na sincronia do SVG
+     especificamente com zoom+rotate juntos.
+     Não dá pra corrigir isso "na raiz" sem editar a biblioteca. A
+     correção aqui é: a cada evento zoom/move (que dispara de verdade
+     em todo frame do pinch, sem depender do 'zoomanim' que o pinch
+     não usa), chamar diretamente o mesmo método que o Renderer usa
+     por dentro pra se realinhar (_updateTransform) — sem recriar
+     nenhuma rua, sem clearLayers, no máximo um requestAnimationFrame
+     pendente por vez. Se essa API interna não existir por algum
+     motivo, o try/catch garante que nada quebra: o app volta a se
+     comportar como antes (sincroniza só ao soltar o dedo). */
+  var overlaySyncPending = false;
+  function syncOverlayTransform(){
+    if(overlaySyncPending) return; // nunca mais de um frame pendente
+    overlaySyncPending = true;
+    requestAnimationFrame(function(){
+      overlaySyncPending = false;
+      try{
+        var renderer = null;
+        [streetLayerGroup, routeLineLayer, neighborhoodLayerGroup].some(function(group){
+          group.eachLayer(function(l){ if(!renderer && l._renderer) renderer = l._renderer; });
+          return !!renderer;
+        });
+        if(renderer && typeof renderer._updateTransform==="function"){
+          renderer._updateTransform(map.getCenter(), map.getZoom());
+        }
+      }catch(e){ /* API interna indisponível: sem problema, sincroniza ao soltar o dedo */ }
+    });
+  }
+  map.on("zoom move", syncOverlayTransform);
+
   startLiveLocation();
 }
 
