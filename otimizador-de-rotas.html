@@ -1,0 +1,2034 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rotas">
+<title>Otimizador de Rotas</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --bg:#14171C; --surface:#1E232B; --surface-2:#262C36; --border:#313846;
+    --text:#F5F6F7; --text-muted:#8B93A1;
+    --accent:#A855F7; --accent-ink:#FFFFFF;
+    --route:#A855F7; --route-ink:#FFFFFF;
+    --twoway:#67E8F9; --oneway:#FB7185; --bairro:#FBBF24;
+    --success:#34D399; --danger:#FB7185;
+    --label-bg:rgba(30,35,43,0.92); --label-text:#F5F6F7;
+    --surface-blur:rgba(28,32,39,0.82);
+    --radius:14px; --safe-top:env(safe-area-inset-top); --safe-bottom:env(safe-area-inset-bottom);
+  }
+  body.light{
+    --bg:#F3F4F6; --surface:#FFFFFF; --surface-2:#EEF0F3; --border:#D9DCE3;
+    --text:#12141A; --text-muted:#5B6270;
+    --accent:#7C3AED; --accent-ink:#FFFFFF;
+    --route:#7C3AED; --route-ink:#FFFFFF;
+    --twoway:#0E7490; --oneway:#DC2626; --bairro:#B45309;
+    --success:#059669; --danger:#DC2626;
+    --label-bg:rgba(255,255,255,0.95); --label-text:#12141A;
+    --surface-blur:rgba(255,255,255,0.86);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%; margin:0; overscroll-behavior:none;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif; background:var(--bg); color:var(--text); position:fixed; inset:0; width:100%; height:100%;}
+  button{font-family:inherit;}
+  #map{position:fixed; inset:0; z-index:0; background:#0A0C0F;}
+  /* mapa base invertido no modo escuro (a fonte OSM só existe em versão clara) */
+  body:not(.light).base-osm .leaflet-tile-pane{ filter:invert(1) hue-rotate(180deg) brightness(0.88) contrast(1.08) saturate(0.35); }
+
+  #edit-menu-btn{
+    display:flex; align-items:center; justify-content:center;
+    position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 84px);
+    width:46px; height:46px; border-radius:50%; border:1px solid var(--border);
+    background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms, background 150ms, color 150ms;
+  }
+  #edit-menu-btn svg{width:19px; height:19px;}
+  #edit-menu-btn.active{background:var(--accent); color:var(--accent-ink); border-color:transparent;}
+  #edit-menu-btn:active, #locate-btn:active, #theme-toggle:active, #north-btn:active{transform:scale(0.92);}
+  #north-btn{
+    display:flex; align-items:center; justify-content:center;
+    position:fixed; right:14px; z-index:10; top:calc(var(--safe-top) + 12px);
+    width:38px; height:38px; border-radius:50%; border:1px solid var(--border);
+    background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    color:var(--oneway); box-shadow:0 4px 14px rgba(0,0,0,0.3);
+    opacity:0; pointer-events:none; transition:opacity 180ms, transform 150ms;
+  }
+  #north-btn svg{width:16px; height:16px;}
+  #north-btn.show{opacity:1; pointer-events:auto;}
+
+  #draw-banner{
+    position:fixed; left:12px; right:12px; z-index:10; top:calc(var(--safe-top) + 12px);
+    background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--border); border-radius:var(--radius); padding:14px; display:none;
+    box-shadow:0 8px 24px rgba(0,0,0,0.3);
+  }
+  #draw-banner.show{display:block; animation:sheet-in 200ms ease-out;}
+  #draw-banner .draw-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px;}
+  #draw-banner p{margin:0; font-size:14px; color:var(--text-muted); line-height:1.4; flex:1;}
+  #draw-banner #draw-banner-close{flex:none !important; border:none; background:var(--surface-2); color:var(--text-muted); width:26px !important; height:26px; border-radius:50% !important; font-size:14px; line-height:1; padding:0 !important;}
+  #draw-banner .row{display:flex; gap:8px;}
+  #draw-banner button{flex:1; border:none; border-radius:10px; padding:10px; font-size:14px; font-weight:600;}
+  .btn-primary{background:var(--accent); color:var(--accent-ink);}
+  .btn-ghost{background:var(--surface-2); color:var(--text);}
+  .btn-danger{background:transparent; color:var(--danger); border:1px solid var(--danger) !important;}
+
+  #locate-btn{display:flex; align-items:center; justify-content:center; position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 138px); width:46px; height:46px; border-radius:50%; border:1px solid var(--border); background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms;}
+  #locate-btn svg, #theme-toggle svg{width:20px; height:20px;}
+  #theme-toggle{display:flex; align-items:center; justify-content:center; position:fixed; right:14px; z-index:10; bottom:calc(var(--safe-bottom) + 192px); width:46px; height:46px; border-radius:50%; border:1px solid var(--border); background:var(--surface-blur); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--text); box-shadow:0 4px 14px rgba(0,0,0,0.3); transition:transform 150ms;}
+  #net-banner{position:fixed; left:12px; right:12px; z-index:15; top:calc(var(--safe-top) + 68px); background:rgba(30,25,20,0.97); border:1px solid var(--oneway); border-radius:var(--radius); padding:14px; display:none;}
+  #net-banner.show{display:block;}
+  #net-banner p{margin:0 0 12px; font-size:13.5px; color:var(--text); line-height:1.5;}
+  #net-banner button{width:100%; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:600; background:var(--accent); color:var(--accent-ink);}
+
+  #tabbar{position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; background:rgba(20,23,28,0.96); backdrop-filter:blur(10px); border-top:1px solid var(--border); padding-bottom:var(--safe-bottom);}
+  body.light #tabbar{background:rgba(255,255,255,0.96);}
+  #tabbar button{flex:1; border:none; background:none; color:var(--text-muted); padding:10px 0 8px; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; font-weight:600; transition:color 180ms;}
+  #tabbar button svg{width:22px; height:22px;}
+  #tabbar button.active{color:var(--accent);}
+
+  .panel{position:fixed; inset:0; z-index:20; background:var(--bg); padding:calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 76px); overflow-y:auto; display:none;}
+  .panel.active{display:block;}
+  .panel h1{font-size:22px; margin:0 0 4px; font-weight:700; letter-spacing:-0.01em;}
+  .panel .sub{color:var(--text-muted); font-size:14px; margin:0 0 18px;}
+
+  input[type=text],input[type=number],select{width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:12px 14px; font-size:16px; margin-bottom:12px;}
+  label.field-label{display:block; font-size:13px; color:var(--text-muted); margin-bottom:6px; font-weight:600;}
+  .segmented{display:flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:14px;}
+  .segmented button{flex:1; padding:11px; border:none; background:var(--surface-2); color:var(--text-muted); font-size:14px; font-weight:600;}
+  .segmented button.on{background:var(--accent); color:var(--accent-ink);}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:10px;}
+  .card-row{display:flex; align-items:center; gap:12px;}
+  .card-row .grow{flex:1; min-width:0;}
+  .card-title{font-size:15px; font-weight:600; margin:0 0 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .card-meta{font-size:13px; color:var(--text-muted); margin:0;}
+  .badge{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap;}
+  .badge-twoway{background:rgba(103,232,249,0.15); color:var(--twoway);}
+  .badge-oneway{background:rgba(251,113,133,0.15); color:var(--oneway);}
+  .icon-btn{display:inline-flex; align-items:center; justify-content:center; background:var(--surface-2); border:none; color:var(--text-muted); width:34px; height:34px; border-radius:50%; flex:none; transition:transform 150ms;}
+  .icon-btn svg{width:16px; height:16px;}
+  .icon-btn:active{transform:scale(0.9);}
+  .icon-btn.danger{color:var(--danger);}
+  .section-title{font-size:13px; color:var(--text-muted); font-weight:700; margin:22px 0 10px;}
+  .section-title:first-child{margin-top:0;}
+  .empty{color:var(--text-muted); font-size:14px; padding:24px 4px; text-align:center;}
+  .checkrow{display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--border);}
+  .checkrow input{width:20px; height:20px; accent-color:var(--route); flex:none;}
+
+  .sticky-cta{position:fixed; left:16px; right:16px; bottom:calc(var(--safe-bottom) + 74px); z-index:25; background:var(--accent); color:var(--accent-ink); border:none; border-radius:12px; padding:14px; font-size:15px; font-weight:700; box-shadow:0 8px 20px rgba(0,0,0,0.35);}
+  .sticky-cta:disabled{opacity:0.4;}
+
+  #exec-bar{position:fixed; left:12px; right:12px; z-index:25; bottom:calc(var(--safe-bottom) + 74px); background:var(--surface-blur); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:none;}
+  #exec-bar.show{display:block;}
+  #exec-bar .exec-row{display:flex; align-items:center; gap:10px;}
+  #exec-bar .exec-label{font-size:11px; color:var(--route); font-weight:700; margin:0 0 2px; text-transform:uppercase; letter-spacing:0.03em;}
+  #exec-bar .exec-title{font-size:16px; font-weight:700; margin:0;}
+  #exec-bar .exec-sub{font-size:12px; color:var(--text-muted); margin:0;}
+  #exec-bar button{border:none; border-radius:10px; padding:11px 16px; font-size:14px; font-weight:700; flex:none;}
+  #exec-stop-route{width:100%; margin-top:10px; background:none; color:var(--danger); border:1px solid var(--danger) !important; padding:9px; font-size:12.5px; font-weight:600;}
+
+  #modal-overlay{position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.55); display:none; align-items:flex-end;}
+  #modal-overlay.show{display:flex;}
+  #modal-content{background:var(--surface); border-radius:22px 22px 0 0; width:100%; padding:20px 18px calc(var(--safe-bottom) + 18px); max-height:80vh; overflow-y:auto; animation:modal-in 220ms cubic-bezier(.2,.8,.2,1);}
+  @keyframes modal-in{from{opacity:0; transform:translateY(16px);} to{opacity:1; transform:translateY(0);}}
+  #modal-content h2{font-size:17px; margin:2px 0 16px;}
+  .modal-actions{display:flex; gap:10px; margin-top:6px;}
+  .modal-actions button{flex:1; border:none; border-radius:10px; padding:13px; font-size:15px; font-weight:700;}
+
+  .house-pin{display:inline-block; background:var(--route); color:var(--route-ink); font-size:11px; font-weight:800; border-radius:6px; padding:2px 7px; border:2px solid #fff; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.4); width:max-content; transition:font-size 120ms, padding 120ms;}
+  .house-pin.done{background:var(--success);}
+  .house-pin.next-stop{outline:3px solid var(--accent); animation:pulse 1.4s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(168,85,247,0.55);} 70%{box-shadow:0 0 0 9px rgba(168,85,247,0);} 100%{box-shadow:0 0 0 0 rgba(168,85,247,0);}}
+  @keyframes sheet-in{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);}}
+  .edit-menu-row{
+    width:100%; display:flex; align-items:center; gap:12px; border:none; background:var(--surface-2);
+    color:var(--text); padding:13px 14px; border-radius:12px; margin-bottom:8px; font-size:15px; font-weight:600;
+    transition:background 150ms, transform 150ms;
+  }
+  .edit-menu-row:active{transform:scale(0.98);}
+  .edit-menu-row svg{width:20px; height:20px; flex:none; color:var(--accent);}
+  .edit-menu-row.danger-row svg{color:var(--danger);}
+
+  /* Nome da rua — elemento DOM (marker/divIcon), não SVG. É a representação
+     visual principal da rua no modo normal; deitado sobre a geometria real,
+     acompanhando o ângulo local e o bearing do mapa. Indicador discreto de
+     sentido (mão-dupla/sentido-único) é a faixinha embaixo do texto — é o
+     único estado confiável que já existia nos dados pra isso (não existe um
+     campo separado de "concluída"; a própria presença do rótulo já significa
+     que a rua está cadastrada). */
+  .street-name-label{
+    display:inline-block; width:max-content; white-space:nowrap; font-weight:600;
+    color:var(--label-text); background:var(--label-bg);
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    border-radius:5px; box-shadow:0 1px 3px rgba(0,0,0,0.3);
+    border-bottom:2px solid transparent;
+    transition:font-size 120ms, padding 120ms;
+  }
+  .street-name-label.dir-twoway{border-bottom-color:var(--twoway);}
+  .street-name-label.dir-oneway{border-bottom-color:var(--oneway);}
+  .street-name-label.next-stop{outline:2px solid var(--accent);}
+
+  .bairro-name-label{
+    display:inline-block; width:max-content; white-space:nowrap; font-size:10.5px; font-weight:700;
+    color:var(--label-text); background:var(--label-bg);
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    border-radius:999px; padding:2px 8px; box-shadow:0 1px 3px rgba(0,0,0,0.3);
+  }
+
+  /* Faixas de zoom: uma única classe no container do mapa controla o tamanho
+     de todos os rótulos de uma vez via CSS — não precisa tocar em cada
+     elemento a cada frame. */
+  #map.zoom-tier-0 .street-name-label{display:none;}
+  #map.zoom-tier-1 .street-name-label{font-size:9.5px; padding:2px 7px;}
+  #map.zoom-tier-2 .street-name-label{font-size:11px; padding:3px 8px;}
+  #map.zoom-tier-3 .street-name-label{font-size:12.5px; padding:3px 9px;}
+  #map.zoom-tier-0 .house-pin{font-size:9px; padding:1px 5px;}
+  #map.zoom-tier-1 .house-pin{font-size:10px; padding:1.5px 6px;}
+  #map.zoom-tier-2 .house-pin{font-size:11px; padding:2px 7px;}
+  #map.zoom-tier-3 .house-pin{font-size:12px; padding:2px 7px;}
+
+  .endpoint-flag{font-size:22px; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.5));}
+  .user-loc-wrap{width:52px; height:52px; position:relative;}
+  .user-loc-cone{
+    position:absolute; left:50%; top:50%; width:52px; height:52px; margin-left:-26px; margin-top:-52px;
+    clip-path:polygon(50% 100%, 18% 6%, 82% 6%);
+    background:linear-gradient(to top, rgba(59,130,246,0.5), rgba(59,130,246,0.02));
+    transform-origin:50% 100%;
+    opacity:0; transition:opacity 250ms;
+  }
+  .user-loc-cone.has-heading{opacity:1;}
+  .user-loc-dot{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:#3B82F6; border:2.5px solid #fff; box-shadow:0 0 0 4px rgba(59,130,246,0.22), 0 2px 6px rgba(0,0,0,0.35);}
+
+  .street-line.street-twoway{stroke:var(--twoway) !important;}
+  .street-line.street-oneway{stroke:var(--oneway) !important;}
+  .street-line.next-stop{stroke:var(--accent) !important; stroke-width:6 !important;}
+  .route-line{stroke:var(--route) !important;}
+  .drawing-line{stroke:var(--accent) !important;}
+  /* Bairro: só contorno, nunca preenchimento — a cor vem de n.color (por
+     bairro) quando definida; bairros antigos sem cor salva caem na variável
+     --bairro padrão do tema, sem precisar migrar nenhum dado. */
+  .bairro-poly{fill:none !important; stroke:var(--bairro);}
+
+  .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(var(--safe-bottom) + 90px); background:var(--surface-2); border:1px solid var(--border); color:var(--text); padding:10px 16px; border-radius:10px; font-size:13px; z-index:200; opacity:0; transition:opacity .25s;}
+  .toast.show{opacity:1;}
+  .stop-card{border-left:3px solid var(--route);}
+  .stop-card.done{border-left-color:var(--success); opacity:0.55;}
+  .stop-num{width:26px; height:26px; border-radius:50%; background:var(--route); color:var(--route-ink); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex:none;}
+  .stop-card.done .stop-num{background:var(--success);}
+  .endpoint-row-btn{flex:none; padding:8px 14px; border:none; border-radius:8px;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="draw-banner">
+  <div class="draw-head">
+    <p id="draw-banner-text"></p>
+    <button id="draw-banner-close">✕</button>
+  </div>
+  <div class="row" id="draw-banner-actions"></div>
+</div>
+
+<button id="locate-btn" title="Minha localização">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+</button>
+<button id="theme-toggle" title="Modo claro/escuro">
+  <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+</button>
+<button id="edit-menu-btn" title="Editar mapa">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+</button>
+<button id="north-btn" title="Virar para o norte">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L16 14 L12 11 L8 14 Z" fill="currentColor" stroke="none"/></svg>
+</button>
+
+
+<div id="net-banner">
+  <p id="net-banner-text">As imagens do mapa não carregaram. Isso costuma acontecer quando o arquivo é aberto numa pré-visualização sem internet liberada, em vez do Safari.</p>
+  <button id="net-banner-close">Entendi</button>
+</div>
+
+<div id="exec-bar">
+  <div class="exec-row">
+    <div class="grow">
+      <p class="exec-label" id="exec-label">Próxima parada</p>
+      <p class="exec-title" id="exec-title">—</p>
+      <p class="exec-sub" id="exec-sub"></p>
+    </div>
+    <button class="btn-primary" id="exec-done">Concluir</button>
+  </div>
+  <button id="exec-stop-route">Encerrar rota</button>
+</div>
+
+<div class="panel" id="panel-lista">
+  <h1>Ruas &amp; casas</h1>
+  <p class="sub">Tudo que você já cadastrou andando pela cidade.</p>
+  <input type="text" id="search-input" placeholder="Buscar por número ou nome da rua">
+  <div id="list-streets"></div>
+  <div id="list-houses"></div>
+
+  <div class="section-title">Dados</div>
+  <div class="card">
+    <p class="card-meta" style="margin-bottom:12px;">Backup local de tudo que está cadastrado (ruas, casas, bairros, rotas e histórico).</p>
+    <button class="btn-ghost" id="btn-export-backup" style="width:100%;border:none;border-radius:10px;padding:12px;margin-bottom:8px;">Exportar backup</button>
+    <button class="btn-ghost" id="btn-import-backup" style="width:100%;border:none;border-radius:10px;padding:12px;">Importar backup</button>
+    <input type="file" id="import-file-input" accept="application/json,.json" style="display:none;">
+  </div>
+  <div class="card">
+    <button class="btn-danger" id="btn-wipe-data" style="width:100%;border-radius:10px;padding:12px;background:transparent;">Apagar todos os dados</button>
+  </div>
+</div>
+
+<div class="panel" id="panel-rota">
+  <div id="rota-select-view">
+    <h1>Montar rota</h1>
+    <p class="sub">Escolha as paradas da entrega de hoje.</p>
+    <div class="card" id="route-endpoints">
+      <div class="card-row" style="margin-bottom:10px;">
+        <div class="grow"><p class="card-title">Início</p><p class="card-meta" id="start-label">Minha localização atual</p></div>
+        <button class="btn-ghost endpoint-row-btn" id="btn-set-start">Alterar</button>
+      </div>
+      <div class="card-row">
+        <div class="grow"><p class="card-title">Fim</p><p class="card-meta" id="end-label">Rota aberta</p></div>
+        <button class="btn-ghost endpoint-row-btn" id="btn-set-end">Alterar</button>
+      </div>
+    </div>
+    <label class="field-label">Bairro</label>
+    <select id="bairro-filter"><option value="">Todos os bairros</option></select>
+    <div class="segmented" id="sel-mode-switch">
+      <button type="button" data-v="house" class="on">Por casas</button>
+      <button type="button" data-v="street">Por ruas inteiras</button>
+    </div>
+    <input type="text" id="rota-search" placeholder="Buscar rua...">
+    <div id="rota-checklist"></div>
+    <button class="btn-ghost" id="btn-history" style="width:100%;border:none;border-radius:10px;padding:12px;margin-top:8px;">Ver histórico de rotas</button>
+  </div>
+  <div id="rota-result-view" style="display:none;">
+    <h1>Rota otimizada</h1>
+    <p class="sub" id="rota-summary"></p>
+    <div id="rota-warning" class="card" style="display:none; border-color:var(--oneway); color:var(--oneway); font-size:13px;"></div>
+    <div id="rota-stops"></div>
+  </div>
+</div>
+
+<button class="sticky-cta" id="rota-cta" style="display:none;"></button>
+
+<div id="tabbar">
+  <button data-tab="mapa" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3z"/><path d="M9 4v13M15 7v13"/></svg>
+    <span>Mapa</span>
+  </button>
+  <button data-tab="lista">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    <span>Ruas &amp; casas</span>
+  </button>
+  <button data-tab="rota">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4h-1"/></svg>
+    <span>Rota</span>
+  </button>
+</div>
+
+<div id="modal-overlay"><div id="modal-content"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.7/dist/leaflet-rotate.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   ESTADO
+============================================================ */
+var streets = [];
+var houses  = [];
+var neighborhoods = []; // {id, name, points:[{lat,lng}...]}
+var routeState = null;
+var routeHistory = [];
+var settings = {theme:"dark", baseKind:"clean"};
+
+var mode = "view"; // view | edit | bairro | street | house | pick
+var pickTarget = null;
+var drawingPoints = [];
+var drawingLayer = null;
+var drawingMarkers = [];
+var selectionMode = "house"; // house | street
+var bairroFilterId = "";
+
+var map, baseLayer;
+var streetLayerGroup, houseLayerGroup, routeLineLayer, endpointLayerGroup, neighborhoodLayerGroup;
+var userMarker = null;
+var watchId = null;
+var lastHeading = null;
+var followHeading = false;      // true = mapa acompanha a direção da bússola
+var smoothedHeading = null;     // heading já suavizado (evita tremedeira)
+var latestRawHeading = null;    // última leitura bruta do sensor
+var headingLoopRunning = false; // evita duplicar a malha de requestAnimationFrame
+var orientationPermissionState = "unknown"; // unknown | granted | denied | unavailable
+var suppressRotateDetection = false; // true durante setBearing feito pelo próprio app
+var tileErrorCount = 0;
+var tileOkCount = 0;
+var netBannerShown = false;
+
+/* ============================================================
+   STORAGE — camada central e versionada
+   -----------------------------------------------------------
+   Antes, cada tipo de dado (ruas, casas, bairros, rota, histórico,
+   tema) vivia numa chave separada (streets-v2, houses-v2, route-v3,
+   route-history-v1, neighborhoods-v1, theme-v1, basekind-v1).
+   Isso é frágil: uma mudança pontual de chave, ou uma inicialização
+   que rode antes do carregamento terminar, pode fazer o app salvar
+   um array vazio por cima de dados que já existiam.
+
+   Agora existe UMA fonte de verdade: um único objeto ROTAS_APP_DATA,
+   com schemaVersion, salvo inteiro de uma vez. Toda leitura/escrita
+   passa por loadAppData()/saveAppData(). As chaves antigas nunca são
+   apagadas — na primeira execução com o novo formato, o app tenta
+   migrar automaticamente qualquer dado que encontrar nelas.
+============================================================ */
+var SCHEMA_VERSION = 1;
+var CENTRAL_KEY = "rotas-app-data";
+var LEGACY_KEYS = {
+  streets:"streets-v2", houses:"houses-v2", neighborhoods:"neighborhoods-v1",
+  routeState:"route-v3", routeHistory:"route-history-v1",
+  theme:"theme-v1", baseKind:"basekind-v1"
+};
+
+var hasClaudeStorage = !!(window.storage && window.storage.get);
+var hasLocalStorage = (function(){
+  try{ var k="__t"; localStorage.setItem(k,"1"); localStorage.removeItem(k); return true; }
+  catch(e){ return false; }
+})();
+
+/* primitivas de baixo nível (usadas pela camada central e, se precisar, por qualquer outra coisa) */
+async function safeGet(key, fallback){
+  try{
+    if(hasClaudeStorage){
+      var r = await window.storage.get(key, false);
+      return r ? JSON.parse(r.value) : fallback;
+    } else if(hasLocalStorage){
+      var v = localStorage.getItem("rotas_"+key);
+      return v!==null ? JSON.parse(v) : fallback;
+    }
+  }catch(e){ console.error(e); }
+  return fallback;
+}
+async function safeSet(key, value){
+  try{
+    if(hasClaudeStorage){ await window.storage.set(key, JSON.stringify(value), false); }
+    else if(hasLocalStorage){ localStorage.setItem("rotas_"+key, JSON.stringify(value)); }
+  }catch(e){ console.error("storage set falhou", key, e); }
+}
+async function rawGetClaude(key){
+  if(!hasClaudeStorage) return undefined;
+  try{ var r = await window.storage.get(key, false); return r ? JSON.parse(r.value) : undefined; }
+  catch(e){ return undefined; }
+}
+function rawGetLocal(key){
+  if(!hasLocalStorage) return undefined;
+  try{ var v = localStorage.getItem("rotas_"+key); return v!==null ? JSON.parse(v) : undefined; }
+  catch(e){ return undefined; }
+}
+/* pega o melhor valor legado disponível, olhando os dois armazenamentos possíveis
+   (o dado pode estar em qualquer um dependendo de onde o app já rodou antes) */
+async function bestLegacyValue(key, isArray){
+  var c = await rawGetClaude(key);
+  var l = rawGetLocal(key);
+  if(isArray){
+    var cArr = Array.isArray(c) ? c : null;
+    var lArr = Array.isArray(l) ? l : null;
+    if(cArr && lArr) return cArr.length >= lArr.length ? cArr : lArr;
+    return cArr || lArr || undefined;
+  }
+  if(c!==undefined && c!==null) return c;
+  if(l!==undefined && l!==null) return l;
+  return undefined;
+}
+
+/* garante que um objeto de dados carregado tem todos os campos esperados,
+   independente de qual versão de schema ele veio */
+function normalizeAppData(data){
+  if(!data || typeof data!=="object") data = {};
+  if(!data.schemaVersion || data.schemaVersion < 1) data.schemaVersion = 1;
+  if(!Array.isArray(data.streets)) data.streets = [];
+  if(!Array.isArray(data.houses)) data.houses = [];
+  if(!Array.isArray(data.neighborhoods)) data.neighborhoods = [];
+  if(!Array.isArray(data.routeHistory)) data.routeHistory = [];
+  if(data.routeState===undefined) data.routeState = null;
+  if(!data.settings || typeof data.settings!=="object") data.settings = {};
+  if(!data.settings.theme) data.settings.theme = "dark";
+  if(!data.settings.baseKind) data.settings.baseKind = "labeled";
+  // migração 1 (já concluída pra quem já usava o app): quem estava preso no
+  // mapa "limpo" antigo (Esri, com bug de cobertura) passou a usar OSM.
+  if(!data.settings.baseKindMigratedV2){
+    data.settings.baseKind = "labeled";
+    data.settings.baseKindMigratedV2 = true;
+  }
+  // migração 2: "clean" agora é CARTO sem rótulos (cai pro OSM sozinho se a
+  // chave ainda não estiver configurada, então é seguro deixar como padrão).
+  if(!data.settings.baseKindMigratedV3){
+    data.settings.baseKind = "clean";
+    data.settings.baseKindMigratedV3 = true;
+  }
+  return data;
+}
+
+/* carrega os dados: se já existir o formato novo, usa ele; senão,
+   tenta migrar automaticamente do formato antigo (multi-chave) */
+async function loadAppData(){
+  var central = await safeGet(CENTRAL_KEY, null);
+  if(central && central.schemaVersion){
+    return normalizeAppData(central);
+  }
+  var legacyStreets = await bestLegacyValue(LEGACY_KEYS.streets, true);
+  var legacyHouses = await bestLegacyValue(LEGACY_KEYS.houses, true);
+  var legacyNeighborhoods = await bestLegacyValue(LEGACY_KEYS.neighborhoods, true);
+  var legacyRoute = await bestLegacyValue(LEGACY_KEYS.routeState, false);
+  var legacyHistory = await bestLegacyValue(LEGACY_KEYS.routeHistory, true);
+  var legacyTheme = await bestLegacyValue(LEGACY_KEYS.theme, false);
+  var legacyBaseKind = await bestLegacyValue(LEGACY_KEYS.baseKind, false);
+
+  var migrated = normalizeAppData({
+    schemaVersion: SCHEMA_VERSION,
+    streets: legacyStreets || [],
+    houses: legacyHouses || [],
+    neighborhoods: legacyNeighborhoods || [],
+    routeState: legacyRoute || null,
+    routeHistory: legacyHistory || [],
+    settings: { theme: legacyTheme || "dark", baseKind: legacyBaseKind || "clean" }
+  });
+
+  var foundLegacy = (legacyStreets&&legacyStreets.length) || (legacyHouses&&legacyHouses.length) ||
+    (legacyNeighborhoods&&legacyNeighborhoods.length) || legacyRoute || (legacyHistory&&legacyHistory.length);
+  await safeSet(CENTRAL_KEY, migrated); // já grava no formato novo, migração só acontece uma vez
+  if(foundLegacy) showToast("Dados antigos migrados com sucesso.");
+  return migrated;
+}
+
+/* salva TUDO de uma vez, sempre no formato novo e completo */
+function saveAppData(){
+  var payload = {
+    schemaVersion: SCHEMA_VERSION,
+    streets: streets,
+    houses: houses,
+    neighborhoods: neighborhoods,
+    routeState: routeState,
+    routeHistory: routeHistory,
+    settings: settings
+  };
+  safeSet(CENTRAL_KEY, payload);
+}
+function saveStreets(){ saveAppData(); }
+function saveHouses(){ saveAppData(); }
+function saveNeighborhoods(){ saveAppData(); }
+function saveRoute(){ saveAppData(); }
+function saveHistory(){ saveAppData(); }
+
+
+/* ============================================================
+   UTIL
+============================================================ */
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function isLight(){ return document.body.classList.contains("light"); }
+
+function haversine(a,b){
+  var R = 6371000;
+  var dLat = (b.lat-a.lat) * Math.PI/180;
+  var dLng = (b.lng-a.lng) * Math.PI/180;
+  var la1 = a.lat*Math.PI/180, la2 = b.lat*Math.PI/180;
+  var h = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));
+}
+function pointToSegmentDistance(p,a,b){
+  var lat0 = (a.lat+b.lat)/2;
+  var mPerDegLat = 111320;
+  var mPerDegLng = 111320*Math.cos(lat0*Math.PI/180);
+  var ax=0, ay=0;
+  var bx=(b.lng-a.lng)*mPerDegLng, by=(b.lat-a.lat)*mPerDegLat;
+  var px=(p.lng-a.lng)*mPerDegLng, py=(p.lat-a.lat)*mPerDegLat;
+  var abx=bx-ax, aby=by-ay;
+  var len2 = abx*abx+aby*aby;
+  var t = len2>0 ? ((px-ax)*abx+(py-ay)*aby)/len2 : 0;
+  t = Math.max(0,Math.min(1,t));
+  var cx=ax+abx*t, cy=ay+aby*t;
+  var dx=px-cx, dy=py-cy;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+function bearing(a,b){
+  var la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180;
+  var dLng=(b.lng-a.lng)*Math.PI/180;
+  var y=Math.sin(dLng)*Math.cos(la2);
+  var x=Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dLng);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+/* Ângulo de leitura do texto, dado o bearing REAL do trecho de rua e o
+   bearing ATUAL do mapa (pra continuar alinhado quando o mapa gira).
+   Deduzido com a mesma matriz de rotação confirmada na Etapa 3
+   (rotateFrom do leaflet-rotate), não copiado às cegas da versão antiga:
+   - uma rua "apontando pro leste" (bearing 90°) deve ficar com o texto
+     HORIZONTAL quando o mapa está com bearing 0 -> por isso o -90 na conta;
+   - o resultado é normalizado pra [-90,90] tratando a rua como uma linha
+     (sem direção definida: leste-oeste e oeste-leste dão o mesmo ângulo),
+     então o texto nunca fica de cabeça para baixo. */
+function textRotationFor(streetBearingDeg, mapBearingDeg){
+  var raw = streetBearingDeg + mapBearingDeg - 90;
+  var n = ((raw % 180) + 180) % 180;
+  if(n > 90) n -= 180;
+  return n;
+}
+/* Ponto médio real da geometria (pelo comprimento acumulado dos trechos,
+   não pelo índice do array de pontos) + o bearing do trecho onde esse
+   ponto cai — usado pra posicionar e girar o nome da rua. */
+function streetMidpointAndBearing(points){
+  if(!points || points.length===0) return {pt:{lat:0,lng:0}, bearing:0};
+  if(points.length===1) return {pt:points[0], bearing:0};
+  var segLens=[], total=0;
+  for(var i=0;i<points.length-1;i++){
+    var d=haversine(points[i],points[i+1]);
+    segLens.push(d); total+=d;
+  }
+  if(total===0) return {pt:points[0], bearing:bearing(points[0],points[1])};
+  var target=total/2, acc=0;
+  for(var i=0;i<segLens.length;i++){
+    var segEndAcc = acc+segLens[i];
+    if(segEndAcc>=target || i===segLens.length-1){
+      var a=points[i], b=points[i+1];
+      var t = segLens[i]>0 ? (target-acc)/segLens[i] : 0;
+      t = Math.max(0,Math.min(1,t));
+      return {
+        pt: {lat:a.lat+(b.lat-a.lat)*t, lng:a.lng+(b.lng-a.lng)*t},
+        bearing: bearing(a,b)
+      };
+    }
+    acc = segEndAcc;
+  }
+  var mid=Math.floor(points.length/2);
+  return {pt:points[mid], bearing:bearing(points[Math.max(0,mid-1)],points[mid])};
+}
+/* Faixas de zoom pros rótulos: uma classe só no container do mapa, que o
+   CSS usa pra redimensionar tudo de uma vez (nenhum loop por elemento). */
+function currentZoomTier(z){
+  if(z < 15) return 0;
+  if(z < 16.5) return 1;
+  if(z < 18) return 2;
+  return 3;
+}
+var lastZoomTier = null;
+function applyZoomTierClass(){
+  if(!map) return;
+  var tier = currentZoomTier(map.getZoom());
+  if(tier===lastZoomTier) return;
+  lastZoomTier = tier;
+  var el = document.getElementById("map");
+  el.className = el.className.replace(/\bzoom-tier-\d\b/g,"").trim();
+  el.classList.add("zoom-tier-"+tier);
+}
+function representativePointForStreet(s){ var idx=Math.floor(s.points.length/2); return s.points[idx]||s.points[0]; }
+
+function fmtDist(m){ return m<1000 ? Math.round(m)+" m" : (m/1000).toFixed(1)+" km"; }
+function fmtTime(m){
+  var mins = Math.round(m/1000/18*60);
+  if(mins<1) return "menos de 1 min";
+  if(mins<60) return mins+" min";
+  return Math.floor(mins/60)+"h"+String(mins%60).padStart(2,"0");
+}
+function fmtDate(iso){
+  var d = new Date(iso);
+  return d.toLocaleDateString("pt-BR")+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+}
+function showToast(msg){
+  var t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t=setTimeout(function(){t.classList.remove("show");},2600);
+}
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function escapeAttr(s){ return escapeHtml(s); }
+
+function streetById(id){ return streets.find(function(s){return s.id===id;}); }
+function streetLabelForHouse(h){ var s = streetById(h.streetId); return s ? s.names.join(" / ") : ""; }
+function countHousesForStreet(id){ return houses.filter(function(h){return h.streetId===id;}).length; }
+
+function pointInPolygon(pt, poly){
+  var inside=false;
+  for(var i=0,j=poly.length-1;i<poly.length;j=i++){
+    var xi=poly[i].lng, yi=poly[i].lat, xj=poly[j].lng, yj=poly[j].lat;
+    var intersect = ((yi>pt.lat)!==(yj>pt.lat)) && (pt.lng < (xj-xi)*(pt.lat-yi)/(yj-yi)+xi);
+    if(intersect) inside=!inside;
+  }
+  return inside;
+}
+function neighborhoodOfPoint(pt){
+  for(var i=0;i<neighborhoods.length;i++){ if(pointInPolygon(pt, neighborhoods[i].points)) return neighborhoods[i]; }
+  return null;
+}
+function houseInNeighborhood(h, nId){ return neighborhoodOfPoint({lat:h.lat,lng:h.lng}) && neighborhoodOfPoint({lat:h.lat,lng:h.lng}).id===nId; }
+function streetInNeighborhood(s, nId){
+  var n = neighborhoods.find(function(x){return x.id===nId;});
+  if(!n) return false;
+  return s.points.some(function(p){ return pointInPolygon(p, n.points); });
+}
+
+/* ---- abstração de "parada" (casa ou rua inteira) ---- */
+function stopKey(kind,id){ return kind+"::"+id; }
+function parseStopKey(key){ var i=key.indexOf("::"); return {kind:key.slice(0,i), id:key.slice(i+2)}; }
+function makeStopFromHouse(h){ return {kind:"house", id:h.id, lat:h.lat, lng:h.lng, label:"Nº "+h.number, sub:streetLabelForHouse(h)}; }
+function makeStopFromStreet(s){
+  var p = representativePointForStreet(s);
+  return {kind:"street", id:s.id, lat:p.lat, lng:p.lng, label:s.names.join(" / "), sub:(s.twoWay?"Mão dupla":"Sentido único")+" · rua inteira"};
+}
+function resolveStop(key){
+  var parsed = parseStopKey(key);
+  if(parsed.kind==="house"){ var h=houses.find(function(x){return x.id===parsed.id;}); return h?makeStopFromHouse(h):null; }
+  var s=streets.find(function(x){return x.id===parsed.id;}); return s?makeStopFromStreet(s):null;
+}
+
+/* ============================================================
+   MODAL
+============================================================ */
+function openModal(html){
+  document.getElementById("modal-content").innerHTML = html;
+  document.getElementById("modal-overlay").classList.add("show");
+}
+function closeModal(){
+  document.getElementById("modal-overlay").classList.remove("show");
+  document.getElementById("modal-content").innerHTML = "";
+}
+document.getElementById("modal-overlay").addEventListener("click", function(e){ if(e.target.id==="modal-overlay") closeModal(); });
+
+/* ============================================================
+   TEMA (também decide o estilo do mapa "limpo")
+============================================================ */
+function applyTheme(themeMode){
+  document.body.classList.toggle("light", themeMode==="light");
+  var icon = document.getElementById("theme-icon");
+  icon.innerHTML = themeMode==="light"
+    ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>'
+    : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>';
+  settings.theme = themeMode;
+  saveAppData();
+  if(map) rebuildBaseLayer();
+}
+document.getElementById("theme-toggle").addEventListener("click", function(){ applyTheme(isLight()?"dark":"light"); });
+
+/* ============================================================
+   MAPA — base
+   -----------------------------------------------------------
+   ⚠️ COLE SUA CHAVE GRATUITA DA CARTO AQUI (sem conta, ~1 min):
+   https://carto.com/basemaps/apikey
+============================================================ */
+var CARTO_API_KEY = "cb1_3i8e_1_82d9bbfb827886a8dca38ed5";
+
+/* -----------------------------------------------------------
+   Duas fontes de tile:
+
+   "clean" (CARTO Positron / Dark Matter, sem rótulos) — PADRÃO.
+     É a única fonte gratuita que entrega ruas, quarteirões,
+     construções, água e áreas verdes com cor de verdade (não é
+     cinza monocromático) SEM nenhum nome/rótulo, com cobertura
+     mundial completa baseada em dado OSM — não tem o "tile não
+     disponível" que a Esri tinha. Tem par claro/escuro nativo
+     (não precisa de filtro CSS) e retina de verdade.
+     Exige uma chave de API gratuita (sem conta, sem cartão,
+     5 milhões de requisições/mês de cortesia) — sem ela, a CARTO
+     carimba "API KEY REQUIRED" em cima do tile. Por isso: se
+     CARTO_API_KEY estiver vazio, o app cai automaticamente pro
+     OSM abaixo, pra nunca mostrar um tile quebrado.
+
+   "labeled" (OpenStreetMap padrão) — reserva/fallback.
+     Cobertura mundial completa, sem chave nenhuma, mas vem com
+     nomes de rua e ícones de lugar de fábrica (usa filtro CSS
+     pra imitar modo escuro, já que não tem par escuro nativo).
+----------------------------------------------------------- */
+var baseKind = "clean"; // espelha settings.baseKind; ver setBaseKind()
+function makeBaseLayer(){
+  var l;
+  if(baseKind==="clean" && CARTO_API_KEY){
+    var style = isLight() ? "light_nolabels" : "dark_nolabels";
+    l = L.tileLayer("https://{s}.basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}{r}.png?key="+CARTO_API_KEY, {
+      tileSize:256, zoomOffset:0, detectRetina:true,
+      maxZoom:20, maxNativeZoom:20, // teto real documentado pela CARTO
+      subdomains:"abcd", attribution:"&copy; OpenStreetMap contributors &copy; CARTO"
+    });
+  } else {
+    if(baseKind==="clean" && !CARTO_API_KEY) console.warn("CARTO_API_KEY vazio — usando OSM como reserva até a chave ser configurada.");
+    l = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      tileSize:256, zoomOffset:0,
+      maxZoom:19, maxNativeZoom:19, // 19 é o teto real e documentado do OSM padrão
+      subdomains:"abc", attribution:"&copy; OpenStreetMap contributors"
+    });
+  }
+  l.on("tileerror", onTileError);
+  l.on("tileload", onTileOk);
+  return l;
+}
+function onTileError(){
+  tileErrorCount++;
+  if(tileErrorCount>=6 && tileOkCount===0 && !netBannerShown){
+    netBannerShown = true;
+    document.getElementById("net-banner").classList.add("show");
+  }
+}
+function onTileOk(){ tileOkCount++; }
+document.getElementById("net-banner-close").addEventListener("click", function(){ document.getElementById("net-banner").classList.remove("show"); });
+function rebuildBaseLayer(){
+  if(baseLayer){ map.removeLayer(baseLayer); baseLayer=null; }
+  tileErrorCount=0; tileOkCount=0; netBannerShown=false;
+  document.getElementById("net-banner").classList.remove("show");
+  // o filtro CSS de modo escuro só é necessário pro OSM (sem par escuro nativo);
+  // a CARTO já entrega dark_nolabels de verdade, sem precisar de filtro.
+  var usingOsmFallback = (baseKind==="labeled") || (baseKind==="clean" && !CARTO_API_KEY);
+  document.body.classList.toggle("base-osm", usingOsmFallback);
+  baseLayer = makeBaseLayer();
+  baseLayer.addTo(map);
+}
+function setBaseKind(kind){
+  baseKind = kind;
+  settings.baseKind = kind;
+  saveAppData();
+  if(map) rebuildBaseLayer();
+}
+
+
+function initMap(){
+  map = L.map("map", {
+    zoomControl:false, attributionControl:true, maxZoom:20,
+    rotate:true, bearing:0, touchRotate:true, rotateControl:false
+  }).setView([-23.5505,-46.6333], 16);
+
+  streetLayerGroup = L.layerGroup().addTo(map);
+  houseLayerGroup = L.layerGroup().addTo(map);
+  routeLineLayer = L.layerGroup().addTo(map);
+  endpointLayerGroup = L.layerGroup().addTo(map);
+  neighborhoodLayerGroup = L.layerGroup().addTo(map);
+
+  map.on("click", onMapClick);
+
+  // gira manualmente (toque com dois dedos) -> sai do modo de acompanhamento;
+  // e qualquer mudança de bearing (manual, por código ou pelo botão Norte)
+  // recalcula o cone imediatamente, no mesmo evento — é o ÚNICO lugar que
+  // faz essa conta, pra nunca ficar um frame atrasado nem duplicar a lógica.
+  map.on("rotate", function(){
+    if(!suppressRotateDetection && followHeading){
+      followHeading = false;
+    }
+    updateConeRotation();
+    updateNorthButtonVisibility();
+    updateStreetLabelRotations(); // realinha só o texto, sem recriar os rótulos
+  });
+
+  /* -----------------------------------------------------------
+     Correção do "atraso" das ruas durante o pinch.
+     -----------------------------------------------------------
+     Causa real (confirmada lendo o código-fonte do leaflet-rotate):
+     no pinch, o plugin chama map._move() de verdade a cada frame do
+     gesto (throttlado por requestAnimFrame) em vez do truque de CSS
+     que o Leaflet padrão usa — então o mapa-base já acompanha certo.
+     Mas o próprio autor do plugin deixou um comentário "@FIXME layer
+     drifts on map.setZoom()" bem em cima do _updateTransform do
+     Renderer SVG — uma falha conhecida e não resolvida do plugin.
+     A partir da Etapa 4, as RUAS não usam mais essa linha SVG no modo
+     normal (agora é o nome da rua, como marker/divIcon, que não sofre
+     desse bug). Mas a rota ativa e o contorno dos bairros continuam
+     sendo SVG e visíveis no modo normal — por isso mantive essa
+     correção, só que agora ela protege menos coisa que antes. */
+  var overlaySyncPending = false;
+  function syncOverlayTransform(){
+    if(overlaySyncPending) return; // nunca mais de um frame pendente
+    overlaySyncPending = true;
+    requestAnimationFrame(function(){
+      overlaySyncPending = false;
+      try{
+        var renderer = null;
+        [streetLayerGroup, routeLineLayer, neighborhoodLayerGroup].some(function(group){
+          group.eachLayer(function(l){ if(!renderer && l._renderer) renderer = l._renderer; });
+          return !!renderer;
+        });
+        if(renderer && typeof renderer._updateTransform==="function"){
+          renderer._updateTransform(map.getCenter(), map.getZoom());
+        }
+      }catch(e){ /* API interna indisponível: sem problema, sincroniza ao soltar o dedo */ }
+      applyZoomTierClass(); // mesma malha de frame, sem custo extra de rAF
+    });
+  }
+  map.on("zoom move", syncOverlayTransform);
+
+  startLiveLocation();
+}
+
+/* ============================================================
+   LOCALIZAÇÃO AO VIVO + BÚSSOLA + ACOMPANHAMENTO DE DIREÇÃO
+   -----------------------------------------------------------
+   followHeading: true enquanto o mapa deve girar seguindo pra onde
+   o usuário está apontando (ativado pelo botão de localização,
+   desativado automaticamente se o usuário girar o mapa manualmente).
+
+   smoothedHeading: heading da bússola já suavizado (média móvel
+   angular, tratando corretamente a virada 359°→0°) — evita
+   tremedeira. Atualizado numa malha de requestAnimationFrame, não
+   a cada evento bruto do sensor (que pode disparar bem mais rápido
+   que a tela consegue redesenhar).
+
+   O marcador do usuário é criado UMA ÚNICA VEZ (ponto + cone já
+   nascem juntos no HTML). Atualizações de posição só chamam
+   setLatLng — nunca setIcon/removeLayer/addLayer. O cone começa
+   invisível (nunca "inventa" uma direção) e só aparece quando a
+   primeira leitura real de bússola chega.
+============================================================ */
+function shortAngleDist(a0, a1){
+  var max = 360, da = (a1 - a0) % max;
+  return (2*da % max) - da;
+}
+/* suppressRotateDetection: map.setBearing() dispara 'rotate' de forma SÍNCRONA
+   (confirmado lendo o código-fonte do plugin: a chamada this.fire('rotate')
+   está dentro do próprio setBearing, sem setTimeout/Promise/rAF no meio) —
+   então elevar a flag antes e derrubar depois, na mesma função, é seguro:
+   nenhum código externo roda "no meio" dessas duas linhas. O try/finally é só
+   uma segurança extra contra a flag ficar travada se setBearing lançar erro. */
+function applyBearing(deg){
+  suppressRotateDetection = true;
+  try{ map.setBearing(deg); }
+  finally{ suppressRotateDetection = false; }
+}
+/* só existe UMA animação de bearing por vez: cada chamada nova invalida
+   qualquer animação anterior ainda em andamento (evita requestAnimationFrame
+   concorrentes brigando pelo mesmo valor) */
+var bearingAnimToken = 0;
+function animateBearingTo(target, duration){
+  var myToken = ++bearingAnimToken;
+  var start = map.getBearing();
+  var delta = shortAngleDist(start, target);
+  var t0 = performance.now();
+  function step(now){
+    if(myToken !== bearingAnimToken) return; // uma chamada mais nova assumiu
+    var p = Math.min(1, (now - t0) / duration);
+    applyBearing(start + delta * p);
+    if(p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function placeUserMarker(ll){
+  if(userMarker){
+    userMarker.setLatLng(ll); // nunca recria o ícone, só reposiciona
+    return;
+  }
+  var html = '<div class="user-loc-wrap">'+
+    '<div class="user-loc-cone"></div>'+
+    '<div class="user-loc-dot"></div></div>';
+  var icon = L.divIcon({className:"", html:html, iconSize:[52,52], iconAnchor:[26,26]});
+  userMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map);
+}
+function revealHeadingCone(){
+  var el = userMarker && userMarker.getElement();
+  var cone = el && el.querySelector(".user-loc-cone");
+  if(cone) cone.classList.add("has-heading");
+}
+/* ---------------------------------------------------------------
+   FÓRMULA heading/bearing — deduzida da matemática real do plugin
+   (L.Point.rotateFrom, usada em layerPointToContainerPoint), não
+   assumida. Testando com bearing=90° concretamente: um ponto a
+   OESTE do centro acaba aparecendo pra CIMA na tela (conferido com
+   a matriz de rotação). Ou seja, girar o bearing pro lado positivo
+   gira o que está "pra cima" no sentido N→O→S→L (sentido anti-
+   horário dos pontos cardeais), não N→L→S→O.
+
+   Por isso:
+   - direção da bússola que está "pra cima" na tela = -bearing.
+   - pra fazer o heading H ficar pra cima (modo seguir), o bearing
+     do mapa precisa ser -H, não +H.
+   - o cone (que mostra a direção real do aparelho em relação ao
+     que a tela mostra agora) precisa ser heading + bearing, não
+     heading - bearing.
+   Conferido nos 4 pontos cardeais (N/L/S/O) e na virada 359°→0°.
+--------------------------------------------------------------- */
+function updateConeRotation(){
+  if(!userMarker || smoothedHeading===null) return;
+  var el = userMarker.getElement();
+  var cone = el && el.querySelector(".user-loc-cone");
+  if(!cone) return;
+  var angle = (smoothedHeading + map.getBearing() + 360) % 360;
+  cone.style.transform = "rotate("+angle+"deg)";
+}
+function handleOrientation(e){
+  var heading = (e.webkitCompassHeading!==undefined && e.webkitCompassHeading!==null) ? e.webkitCompassHeading
+    : (e.alpha!==null && e.alpha!==undefined ? (360-e.alpha) : null);
+  if(heading!==null && !isNaN(heading)) latestRawHeading = heading;
+}
+function startHeadingLoop(){
+  if(headingLoopRunning) return; // nunca duplica a malha
+  headingLoopRunning = true;
+  var lastAppliedTarget = null;
+  function loop(){
+    if(latestRawHeading!==null){
+      var hadHeadingBefore = smoothedHeading!==null;
+      smoothedHeading = hadHeadingBefore
+        ? (smoothedHeading + shortAngleDist(smoothedHeading, latestRawHeading) * 0.18 + 360) % 360
+        : latestRawHeading;
+      lastHeading = smoothedHeading;
+      if(!hadHeadingBefore) revealHeadingCone();
+      updateConeRotation();
+      if(followHeading){
+        var target = (-smoothedHeading + 360) % 360; // ver comentário acima: bearing = -heading
+        if(lastAppliedTarget===null || Math.abs(shortAngleDist(lastAppliedTarget, target))>0.4){
+          applyBearing(target); // dispara 'rotate', que já recalcula o cone sozinho
+          lastAppliedTarget = target;
+        }
+      } else {
+        lastAppliedTarget = null; // sai do modo seguir -> próxima ativação recomeça limpo
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+function startLiveLocation(){
+  if(navigator.geolocation){
+    watchId = navigator.geolocation.watchPosition(function(pos){
+      var ll=[pos.coords.latitude,pos.coords.longitude];
+      placeUserMarker(ll);
+      if(!startLiveLocation._centered){
+        map.setView(ll,17);
+        startLiveLocation._centered=true;
+      } else if(followHeading){
+        // acompanhamento ativo: mantém o usuário no centro a cada posição nova
+        // do GPS (não a cada frame de bússola) — leve, sem loop, sem mexer no zoom.
+        map.panTo(ll, {animate:false});
+      }
+    }, function(){}, {enableHighAccuracy:true});
+  }
+  // Importante: NÃO pedimos permissão de bússola aqui. No iOS, requestPermission()
+  // só funciona (e não "queima" silenciosamente) quando chamado dentro de um gesto
+  // real do usuário — por isso isso só acontece no toque do botão de localização.
+}
+function ensureCompassPermission(callback){
+  if(orientationPermissionState==="granted" || orientationPermissionState==="denied" || orientationPermissionState==="unavailable"){
+    callback(); return;
+  }
+  if(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function"){
+    DeviceOrientationEvent.requestPermission().then(function(state){
+      orientationPermissionState = state==="granted" ? "granted" : "denied";
+      if(orientationPermissionState==="granted"){
+        window.addEventListener("deviceorientation", handleOrientation);
+        startHeadingLoop();
+      }
+      callback();
+    }).catch(function(){ orientationPermissionState="denied"; callback(); });
+  } else if(typeof DeviceOrientationEvent!=="undefined"){
+    orientationPermissionState = "granted"; // navegadores que não exigem o gesto (ex.: Chrome/Android)
+    window.addEventListener("deviceorientation", handleOrientation);
+    startHeadingLoop();
+    callback();
+  } else {
+    orientationPermissionState = "unavailable";
+    callback();
+  }
+}
+function updateNorthButtonVisibility(){
+  var btn = document.getElementById("north-btn");
+  if(!btn) return;
+  var bearing = map.getBearing();
+  btn.classList.toggle("show", Math.abs(shortAngleDist(0,bearing))>1);
+}
+document.getElementById("locate-btn").addEventListener("click", function(){
+  followHeading = true;
+  ensureCompassPermission(function(){
+    if(orientationPermissionState!=="granted") followHeading = false; // sem bússola, nada a seguir
+    if(!navigator.geolocation) return showToast("Localização não disponível.");
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var ll=[pos.coords.latitude,pos.coords.longitude];
+      map.setView(ll,17);
+      placeUserMarker(ll);
+      if(followHeading && smoothedHeading!==null) animateBearingTo((-smoothedHeading+360)%360, 300);
+      updateNorthButtonVisibility();
+    }, function(){ showToast("Não foi possível obter sua localização."); });
+  });
+});
+document.getElementById("north-btn").addEventListener("click", function(){
+  followHeading = false;
+  animateBearingTo(0, 350);
+});
+
+
+function onMapClick(e){
+  if(mode==="street" || mode==="bairro"){
+    drawingPoints.push({lat:e.latlng.lat, lng:e.latlng.lng});
+    redrawDrawing(); updateDrawBanner();
+  } else if(mode==="house"){
+    openHouseForm(null, {lat:e.latlng.lat, lng:e.latlng.lng});
+  } else if(mode==="pick"){
+    var pt = {lat:e.latlng.lat, lng:e.latlng.lng};
+    var rs = ensureRouteState();
+    if(pickTarget==="start"){ rs.customStart = pt; } else { rs.customEnd = pt; rs.endMode = "custom"; }
+    saveRoute(); pickTarget = null; setMode("view");
+    renderEndpointMarkers(); setTab("rota"); updateEndpointLabels();
+    showToast("Ponto definido.");
+  }
+}
+function redrawDrawing(){
+  if(drawingLayer) map.removeLayer(drawingLayer);
+  drawingMarkers.forEach(function(m){map.removeLayer(m);});
+  drawingMarkers=[];
+  if(drawingPoints.length===0) return;
+  var latlngs = drawingPoints.map(function(p){return [p.lat,p.lng];});
+  if(mode==="bairro" && drawingPoints.length>=3){
+    drawingLayer = L.polygon(latlngs, {className:"bairro-poly", weight:3, dashArray:"6,6"}).addTo(map);
+  } else {
+    drawingLayer = L.polyline(latlngs, {className:"drawing-line", weight:4, dashArray:"6,6"}).addTo(map);
+  }
+  drawingPoints.forEach(function(p){
+    var m = L.circleMarker([p.lat,p.lng],{radius:5, color:"#fff", weight:2, fillColor:"#A855F7", fillOpacity:1}).addTo(map);
+    drawingMarkers.push(m);
+  });
+}
+
+/* ============================================================
+   MODO DE INTERAÇÃO
+============================================================ */
+document.getElementById("edit-menu-btn").addEventListener("click", openEditMenu);
+function openEditMenu(){
+  openModal(
+    '<h2>Editar mapa</h2>'+
+    '<button type="button" class="edit-menu-row" id="menu-add-bairro">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>'+
+      'Adicionar bairro</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-add-street">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="4"/></svg>'+
+      'Adicionar rua</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-add-house">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>'+
+      'Adicionar casa</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-edit-el">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'+
+      'Editar elemento</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-toggle-base">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg>'+
+      '<span id="menu-toggle-base-text">'+(baseKind==="labeled"?"Voltar pro mapa sem rótulos (padrão)":"Mapa com nomes (OpenStreetMap)")+'</span></button>'+
+    '<button type="button" class="btn-ghost" id="menu-close" style="width:100%;border:none;border-radius:12px;padding:13px;margin-top:4px;">Cancelar</button>'
+  );
+  document.getElementById("menu-add-bairro").addEventListener("click", function(){ closeModal(); setMode("bairro"); });
+  document.getElementById("menu-add-street").addEventListener("click", function(){ closeModal(); setMode("street"); });
+  document.getElementById("menu-add-house").addEventListener("click", function(){ closeModal(); setMode("house"); });
+  document.getElementById("menu-edit-el").addEventListener("click", function(){ closeModal(); setMode("edit"); });
+  document.getElementById("menu-toggle-base").addEventListener("click", function(){
+    setBaseKind(baseKind==="labeled" ? "clean" : "labeled");
+    closeModal();
+    showToast(baseKind==="labeled" ? "Mapa com nomes (OpenStreetMap) ativado" : "Mapa sem rótulos ativado");
+  });
+  document.getElementById("menu-close").addEventListener("click", closeModal);
+}
+document.getElementById("draw-banner-close").addEventListener("click", function(){
+  if(mode==="street"||mode==="bairro") cancelDrawing();
+  setMode("view");
+});
+function setMode(m){
+  if((mode==="street"||mode==="bairro") && m!==mode) cancelDrawing();
+  var wasEdit = mode==="edit", willBeEdit = m==="edit";
+  mode = m;
+  document.getElementById("edit-menu-btn").classList.toggle("active", mode!=="view");
+  updateDrawBanner();
+  if(wasEdit!==willBeEdit && streetLayerGroup) renderStreetsOnMap(); // mostra/esconde a linha de geometria
+}
+function updateDrawBanner(){
+  var banner = document.getElementById("draw-banner");
+  var text = document.getElementById("draw-banner-text");
+  var actions = document.getElementById("draw-banner-actions");
+  if(mode==="street"){
+    banner.classList.add("show");
+    text.textContent = drawingPoints.length<2 ? "Toque no mapa para marcar os pontos da rua, na ordem em que ela segue." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    actions.innerHTML="";
+    if(drawingPoints.length>0) actions.appendChild(makeBtn("Desfazer ponto","btn-ghost",function(){ drawingPoints.pop(); redrawDrawing(); updateDrawBanner(); }));
+    if(drawingPoints.length>=2) actions.appendChild(makeBtn("Concluir rua","btn-primary",finishStreetDrawing));
+    if(drawingPoints.length>0) actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
+  } else if(mode==="bairro"){
+    banner.classList.add("show");
+    text.textContent = drawingPoints.length<3 ? "Toque no mapa para marcar o contorno do bairro (mín. 3 pontos)." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    actions.innerHTML="";
+    if(drawingPoints.length>0) actions.appendChild(makeBtn("Desfazer ponto","btn-ghost",function(){ drawingPoints.pop(); redrawDrawing(); updateDrawBanner(); }));
+    if(drawingPoints.length>=3) actions.appendChild(makeBtn("Concluir bairro","btn-primary",finishNeighborhoodDrawing));
+    if(drawingPoints.length>0) actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
+  } else if(mode==="house"){
+    banner.classList.add("show"); text.textContent = "Toque no mapa sobre a casa para cadastrar o número."; actions.innerHTML="";
+  } else if(mode==="edit"){
+    banner.classList.add("show"); text.textContent = "Toque numa casa, rua ou bairro no mapa para editar."; actions.innerHTML="";
+  } else if(mode==="pick"){
+    banner.classList.add("show");
+    text.textContent = "Toque no mapa para marcar o "+(pickTarget==="start"?"início":"fim")+" da rota.";
+    actions.innerHTML="";
+    actions.appendChild(makeBtn("Cancelar","btn-danger",function(){ pickTarget=null; setMode("view"); setTab("rota"); }));
+  } else {
+    banner.classList.remove("show");
+  }
+}
+function makeBtn(label,cls,fn){ var b=document.createElement("button"); b.textContent=label; b.className=cls; b.addEventListener("click",fn); return b; }
+function cancelDrawing(){ drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+
+/* ============================================================
+   FORMULÁRIO DE RUA
+============================================================ */
+function finishStreetDrawing(){ openStreetForm(null, drawingPoints.slice()); }
+function openStreetForm(existing, newPoints){
+  var names = existing ? existing.names.slice() : [""];
+  if(names.length===0) names=[""];
+  var twoWay = existing ? existing.twoWay : true;
+  function rowsHtml(){
+    return names.map(function(n,i){
+      return '<div style="display:flex;gap:8px;margin-bottom:8px;">'+
+        '<input type="text" class="street-name-input" data-idx="'+i+'" placeholder="Nome '+(i+1)+'" value="'+escapeAttr(n)+'" style="margin-bottom:0;flex:1;">'+
+        (names.length>1 ? '<button type="button" class="icon-btn danger remove-name-row" data-idx="'+i+'" style="flex:none;">✕</button>' : '')+
+      '</div>';
+    }).join("");
+  }
+  openModal(
+    '<h2>'+(existing?"Editar rua":"Nova rua")+'</h2>'+
+    '<label class="field-label">Nome(s) da rua</label>'+
+    '<div id="street-names-wrap">'+rowsHtml()+'</div>'+
+    '<button type="button" class="btn-ghost" id="add-name-row" style="width:100%;border:none;border-radius:10px;padding:10px;margin-bottom:14px;">+ Adicionar outro nome</button>'+
+    '<label class="field-label">Sentido</label>'+
+    '<div class="segmented" id="f-street-dir">'+
+      '<button type="button" data-v="1" class="'+(twoWay?"on":"")+'">Mão dupla</button>'+
+      '<button type="button" data-v="0" class="'+(!twoWay?"on":"")+'">Sentido único</button>'+
+    '</div>'+
+    '<p class="card-meta" style="margin-bottom:14px;">No sentido único, o trânsito segue na ordem em que os pontos foram marcados no mapa.</p>'+
+    '<div class="modal-actions"><button class="btn-ghost" id="f-street-cancel">Cancelar</button><button class="btn-primary" id="f-street-save">Salvar rua</button></div>'+
+    (existing ? '<button class="btn-danger" id="f-street-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir rua</button>' : '')
+  );
+  function bindRemove(){
+    document.querySelectorAll(".remove-name-row").forEach(function(b){
+      b.addEventListener("click", function(){ syncNames(); names.splice(+b.dataset.idx,1); refreshRows(); });
+    });
+  }
+  function refreshRows(){ document.getElementById("street-names-wrap").innerHTML = rowsHtml(); bindRemove(); }
+  function syncNames(){ document.querySelectorAll(".street-name-input").forEach(function(inp){ names[+inp.dataset.idx] = inp.value; }); }
+  bindRemove();
+  document.getElementById("add-name-row").addEventListener("click", function(){ syncNames(); names.push(""); refreshRows(); });
+  document.querySelectorAll("#f-street-dir button").forEach(function(b){
+    b.addEventListener("click",function(){
+      document.querySelectorAll("#f-street-dir button").forEach(function(x){x.classList.remove("on");});
+      b.classList.add("on"); twoWay = b.dataset.v==="1";
+    });
+  });
+  document.getElementById("f-street-cancel").addEventListener("click", function(){
+    if(!existing){ drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    closeModal();
+  });
+  document.getElementById("f-street-save").addEventListener("click", function(){
+    syncNames();
+    var finalNames = names.map(function(n){return n.trim();}).filter(Boolean);
+    if(finalNames.length===0){ showToast("Dê ao menos um nome para a rua."); return; }
+    if(existing){ existing.names=finalNames; existing.twoWay=twoWay; }
+    else { streets.push({id:uid(), names:finalNames, twoWay:twoWay, points:newPoints}); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    saveStreets();
+    renderStreetsOnMap(); renderListaPanel(); renderRotaChecklist();
+    closeModal(); showToast("Rua salva.");
+  });
+  if(existing){
+    document.getElementById("f-street-delete").addEventListener("click", function(){
+      streets = streets.filter(function(x){return x.id!==existing.id;});
+      houses.forEach(function(h){ if(h.streetId===existing.id) h.streetId=null; });
+      saveStreets(); saveHouses();
+      renderStreetsOnMap(); renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
+      closeModal(); showToast("Rua excluída.");
+    });
+  }
+}
+function openStreetPopup(s){
+  openModal(
+    '<h2>'+escapeHtml(s.names.join(" / "))+'</h2>'+
+    '<p class="card-meta">'+(s.twoWay?"Mão dupla":"Sentido único")+' · '+countHousesForStreet(s.id)+' casas vinculadas</p>'+
+    '<div class="modal-actions" style="margin-top:16px;"><button class="btn-ghost" id="st-close">Fechar</button><button class="btn-primary" id="st-edit">Editar</button></div>'
+  );
+  document.getElementById("st-close").addEventListener("click", closeModal);
+  document.getElementById("st-edit").addEventListener("click", function(){ openStreetForm(s); });
+}
+
+/* ============================================================
+   FORMULÁRIO DE BAIRRO
+============================================================ */
+function finishNeighborhoodDrawing(){ openNeighborhoodForm(null, drawingPoints.slice()); }
+function openNeighborhoodForm(existing, newPoints){
+  var defaultColor = isLight() ? "#B45309" : "#FBBF24";
+  var currentColor = (existing && existing.color) ? existing.color : defaultColor;
+  openModal(
+    '<h2>'+(existing?"Editar bairro":"Novo bairro")+'</h2>'+
+    '<label class="field-label">Nome do bairro</label>'+
+    '<input type="text" id="f-bairro-name" placeholder="Ex: Centro" value="'+(existing?escapeAttr(existing.name):"")+'">'+
+    '<label class="field-label">Cor do contorno</label>'+
+    '<input type="color" id="f-bairro-color" value="'+currentColor+'" style="width:100%;height:44px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);margin-bottom:14px;padding:4px;">'+
+    '<div class="modal-actions"><button class="btn-ghost" id="f-bairro-cancel">Cancelar</button><button class="btn-primary" id="f-bairro-save">Salvar bairro</button></div>'+
+    (existing ? '<button class="btn-danger" id="f-bairro-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir bairro</button>' : '')
+  );
+  document.getElementById("f-bairro-cancel").addEventListener("click", function(){
+    if(!existing){ drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    closeModal();
+  });
+  document.getElementById("f-bairro-save").addEventListener("click", function(){
+    var name = document.getElementById("f-bairro-name").value.trim();
+    var color = document.getElementById("f-bairro-color").value;
+    if(!name){ showToast("Dê um nome para o bairro."); return; }
+    if(existing){ existing.name = name; existing.color = color; }
+    else { neighborhoods.push({id:uid(), name:name, points:newPoints, color:color}); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    saveNeighborhoods();
+    renderNeighborhoodsOnMap(); populateBairroFilter();
+    closeModal(); showToast("Bairro salvo.");
+  });
+  if(existing){
+    document.getElementById("f-bairro-delete").addEventListener("click", function(){
+      neighborhoods = neighborhoods.filter(function(x){return x.id!==existing.id;});
+      saveNeighborhoods();
+      renderNeighborhoodsOnMap(); populateBairroFilter();
+      closeModal(); showToast("Bairro excluído.");
+    });
+  }
+}
+function openNeighborhoodPopup(n){
+  var houseCount = houses.filter(function(h){return houseInNeighborhood(h,n.id);}).length;
+  var streetCount = streets.filter(function(s){return streetInNeighborhood(s,n.id);}).length;
+  openModal(
+    '<h2>'+escapeHtml(n.name)+'</h2>'+
+    '<p class="card-meta">'+streetCount+' ruas · '+houseCount+' casas dentro da área</p>'+
+    '<div class="modal-actions" style="margin-top:16px;"><button class="btn-ghost" id="nb-close">Fechar</button><button class="btn-primary" id="nb-edit">Editar</button></div>'
+  );
+  document.getElementById("nb-close").addEventListener("click", closeModal);
+  document.getElementById("nb-edit").addEventListener("click", function(){ openNeighborhoodForm(n); });
+}
+
+/* ============================================================
+   CASAS
+============================================================ */
+function nearestStreetId(pt){
+  var best=null, bestD=Infinity;
+  streets.forEach(function(s){
+    for(var i=0;i<s.points.length-1;i++){
+      var d = pointToSegmentDistance(pt, s.points[i], s.points[i+1]);
+      if(d<bestD){ bestD=d; best=s.id; }
+    }
+  });
+  return bestD<60 ? best : null;
+}
+function openHouseForm(existing, pt){
+  var suggestion = existing ? existing.streetId : nearestStreetId(pt);
+  var options = streets.map(function(s){
+    return '<option value="'+s.id+'"'+(suggestion===s.id?" selected":"")+'>'+escapeHtml(s.names.join(" / "))+'</option>';
+  }).join("");
+  openModal(
+    '<h2>'+(existing?"Editar casa":"Nova casa")+'</h2>'+
+    '<label class="field-label">Número</label>'+
+    '<input type="text" id="f-house-number" placeholder="Ex: 245" value="'+(existing?escapeAttr(existing.number):"")+'" inputmode="numeric">'+
+    '<label class="field-label">Rua</label>'+
+    '<select id="f-house-street"><option value="">Sem rua vinculada</option>'+options+'</select>'+
+    '<div class="modal-actions"><button class="btn-ghost" id="f-house-cancel">Cancelar</button><button class="btn-primary" id="f-house-save">Salvar</button></div>'+
+    (existing ? '<button class="btn-danger" id="f-house-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir casa</button>' : '')
+  );
+  document.getElementById("f-house-cancel").addEventListener("click", closeModal);
+  document.getElementById("f-house-save").addEventListener("click", function(){
+    var number = document.getElementById("f-house-number").value.trim();
+    var streetId = document.getElementById("f-house-street").value;
+    if(!number){ showToast("Informe o número da casa."); return; }
+    if(existing){ existing.number=number; existing.streetId=streetId||null; }
+    else { houses.push({id:uid(), number:number, streetId:streetId||null, lat:pt.lat, lng:pt.lng}); }
+    saveHouses();
+    renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
+    closeModal(); showToast("Casa salva.");
+  });
+  if(existing){
+    document.getElementById("f-house-delete").addEventListener("click", function(){
+      houses = houses.filter(function(h){return h.id!==existing.id;});
+      saveHouses();
+      renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
+      closeModal(); showToast("Casa excluída.");
+    });
+  }
+}
+
+/* ============================================================
+   RENDER NO MAPA
+============================================================ */
+function currentNextStopKey(){
+  var rs = ensureRouteState();
+  if(!rs.active) return null;
+  var info = currentStopInfo();
+  if(!info || info.isEnd) return null;
+  return stopKey(info.kind, info.id);
+}
+function renderStreetsOnMap(){
+  streetLayerGroup.clearLayers();
+  var nextKey = currentNextStopKey();
+  var showGeometry = (mode==="edit"); // linha SVG só aparece durante edição
+  streets.forEach(function(s){
+    var isNext = nextKey === stopKey("street", s.id);
+    if(showGeometry){
+      var latlngs = s.points.map(function(p){return [p.lat,p.lng];});
+      var line = L.polyline(latlngs, {className:"street-line "+(s.twoWay?"street-twoway":"street-oneway")+(isNext?" next-stop":""), weight: isNext?6:4, opacity:0.9}).addTo(streetLayerGroup);
+      line.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
+    }
+    var mb = streetMidpointAndBearing(s.points);
+    var angle = textRotationFor(mb.bearing, map.getBearing());
+    var cls = "street-name-label "+(s.twoWay?"dir-twoway":"dir-oneway")+(isNext?" next-stop":"");
+    var labelIcon = L.divIcon({className:"", html:'<div class="'+cls+'" style="transform:translate(-50%,-50%) rotate('+angle+'deg);">'+escapeHtml(s.names.join(" / "))+'</div>', iconSize:[0,0]});
+    var lm = L.marker([mb.pt.lat, mb.pt.lng], {icon:labelIcon}).addTo(streetLayerGroup);
+    lm._streetBearing = mb.bearing; // guardado pra realinhar no rotate sem recriar nada
+    lm.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
+  });
+  applyZoomTierClass();
+}
+/* realinha só o texto dos rótulos de rua quando o mapa gira — não mexe em
+   posição (o Leaflet já faz isso sozinho) nem recria nenhum marker */
+function updateStreetLabelRotations(){
+  if(!streetLayerGroup) return;
+  streetLayerGroup.eachLayer(function(lm){
+    if(lm._streetBearing===undefined) return; // é a linha SVG do modo edição, não o rótulo
+    var el = lm.getElement();
+    var div = el && el.firstChild;
+    if(div) div.style.transform = "translate(-50%,-50%) rotate("+textRotationFor(lm._streetBearing, map.getBearing())+"deg)";
+  });
+}
+function renderHousesOnMap(){
+  houseLayerGroup.clearLayers();
+  var doneSet = routeState && routeState.completed ? new Set(routeState.completed) : new Set();
+  var nextKey = currentNextStopKey();
+  houses.forEach(function(h){
+    var key = stopKey("house", h.id);
+    var isDone = doneSet.has(key);
+    var isNext = nextKey===key;
+    var icon = L.divIcon({
+      className:"",
+      html:'<div class="house-pin'+(isDone?" done":"")+(isNext?" next-stop":"")+'" style="transform:translate(-50%,-100%);">'+escapeHtml(h.number)+'</div>',
+      iconSize:[0,0]
+    });
+    var m = L.marker([h.lat,h.lng],{icon:icon}).addTo(houseLayerGroup);
+    m.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openHouseForm(h, {lat:h.lat,lng:h.lng}); } });
+  });
+}
+function renderEndpointMarkers(){
+  endpointLayerGroup.clearLayers();
+  var rs = ensureRouteState();
+  if(rs.customStart){
+    var si = L.divIcon({className:"", html:'<div class="endpoint-flag" style="transform:translate(-50%,-100%);">🚩</div>', iconSize:[0,0]});
+    L.marker([rs.customStart.lat, rs.customStart.lng], {icon:si}).addTo(endpointLayerGroup);
+  }
+  if(rs.endMode==="custom" && rs.customEnd){
+    var ei = L.divIcon({className:"", html:'<div class="endpoint-flag" style="transform:translate(-50%,-100%);">🏁</div>', iconSize:[0,0]});
+    L.marker([rs.customEnd.lat, rs.customEnd.lng], {icon:ei}).addTo(endpointLayerGroup);
+  }
+}
+function neighborhoodCentroid(points){
+  var lat=0,lng=0;
+  points.forEach(function(p){lat+=p.lat; lng+=p.lng;});
+  return {lat:lat/points.length, lng:lng/points.length};
+}
+function renderNeighborhoodsOnMap(){
+  neighborhoodLayerGroup.clearLayers();
+  neighborhoods.forEach(function(n){
+    var latlngs = n.points.map(function(p){return [p.lat,p.lng];});
+    var poly = L.polygon(latlngs, {
+      className:"bairro-poly", weight:2.5, fill:false,
+      color: n.color || undefined // sem cor salva (bairro antigo) -> cai no var(--bairro) do CSS
+    }).addTo(neighborhoodLayerGroup);
+    poly.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
+    var c = neighborhoodCentroid(n.points);
+    var labelIcon = L.divIcon({className:"", html:'<div class="bairro-name-label" style="transform:translate(-50%,-50%);'+(n.color?(' color:'+n.color+';'):'')+'">'+escapeHtml(n.name)+'</div>', iconSize:[0,0]});
+    var lm = L.marker([c.lat,c.lng], {icon:labelIcon}).addTo(neighborhoodLayerGroup);
+    lm.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
+  });
+}
+
+/* ============================================================
+   ABAS
+============================================================ */
+document.querySelectorAll("#tabbar button").forEach(function(btn){
+  btn.addEventListener("click", function(){ setTab(btn.dataset.tab); });
+});
+function setTab(tab){
+  document.querySelectorAll("#tabbar button").forEach(function(b){b.classList.toggle("active", b.dataset.tab===tab);});
+  document.getElementById("panel-lista").classList.toggle("active", tab==="lista");
+  document.getElementById("panel-rota").classList.toggle("active", tab==="rota");
+  var showMapUI = tab==="mapa";
+  document.getElementById("edit-menu-btn").style.display = showMapUI?"flex":"none";
+  document.getElementById("north-btn").style.display = showMapUI?"flex":"none";
+  if(showMapUI && map) updateNorthButtonVisibility();
+  document.getElementById("locate-btn").style.display = showMapUI?"block":"none";
+  document.getElementById("theme-toggle").style.display = showMapUI?"block":"none";
+  if(tab==="mapa") updateDrawBanner(); else document.getElementById("draw-banner").classList.remove("show");
+  var rs = ensureRouteState();
+  var showingResult = document.getElementById("rota-result-view").style.display!=="none";
+  document.getElementById("rota-cta").style.display = (tab==="rota" && !showingResult) ? "block" : "none";
+  document.getElementById("exec-bar").classList.toggle("show", showMapUI && rs.active && !!currentStopInfo());
+  if(tab==="rota") renderRotaChecklist();
+  if(tab==="mapa") setTimeout(function(){map.invalidateSize();},50);
+}
+
+/* ============================================================
+   PAINEL LISTA
+============================================================ */
+document.getElementById("search-input").addEventListener("input", renderListaPanel);
+
+/* ============================================================
+   BACKUP — exportar / importar / apagar tudo
+============================================================ */
+var BACKUP_APP_TAG = "rotas-otimizador-backup";
+function currentDataSnapshot(){
+  return {
+    app: BACKUP_APP_TAG,
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    streets: streets,
+    houses: houses,
+    neighborhoods: neighborhoods,
+    routeState: routeState,
+    routeHistory: routeHistory,
+    settings: settings
+  };
+}
+document.getElementById("btn-export-backup").addEventListener("click", function(){
+  var data = currentDataSnapshot();
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  var url = URL.createObjectURL(blob);
+  var d = new Date();
+  var dateStr = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "backup-rotas-"+dateStr+".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  showToast("Backup exportado.");
+});
+
+document.getElementById("btn-import-backup").addEventListener("click", function(){
+  document.getElementById("import-file-input").click();
+});
+document.getElementById("import-file-input").addEventListener("change", function(e){
+  var file = e.target.files && e.target.files[0];
+  e.target.value = ""; // permite selecionar o mesmo arquivo de novo depois
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    var parsed;
+    try{ parsed = JSON.parse(reader.result); }
+    catch(err){ showToast("Arquivo inválido: não é um JSON."); return; }
+    if(!parsed || parsed.app!==BACKUP_APP_TAG || typeof parsed.schemaVersion!=="number"){
+      showToast("Esse arquivo não parece ser um backup deste aplicativo.");
+      return;
+    }
+    confirmImportBackup(parsed);
+  };
+  reader.onerror = function(){ showToast("Não foi possível ler o arquivo."); };
+  reader.readAsText(file);
+});
+function confirmImportBackup(parsed){
+  var dateStr = parsed.exportedAt ? fmtDate(parsed.exportedAt) : "data desconhecida";
+  var nStreets = Array.isArray(parsed.streets) ? parsed.streets.length : 0;
+  var nHouses = Array.isArray(parsed.houses) ? parsed.houses.length : 0;
+  openModal(
+    '<h2>Importar backup</h2>'+
+    '<p class="card-meta" style="margin-bottom:14px;">Backup de '+escapeHtml(dateStr)+' — '+nStreets+' ruas, '+nHouses+' casas.<br><br>'+
+    'Isso vai <strong>substituir todos os dados atuais</strong> do aplicativo por este backup. '+
+    'Uma cópia de segurança dos dados atuais é feita automaticamente antes, por precaução.</p>'+
+    '<div class="modal-actions"><button class="btn-ghost" id="import-cancel">Cancelar</button><button class="btn-primary" id="import-confirm">Importar e substituir</button></div>'
+  );
+  document.getElementById("import-cancel").addEventListener("click", closeModal);
+  document.getElementById("import-confirm").addEventListener("click", function(){
+    safeSet("rotas-app-data-preimport-backup", currentDataSnapshot()); // salvaguarda antes de sobrescrever
+    var normalized = normalizeAppData(parsed);
+    streets = normalized.streets;
+    houses = normalized.houses;
+    neighborhoods = normalized.neighborhoods;
+    routeState = normalized.routeState;
+    ensureRouteState();
+    routeHistory = normalized.routeHistory;
+    settings = normalized.settings;
+    baseKind = settings.baseKind;
+    saveAppData();
+    applyTheme(settings.theme);
+    renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
+    populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
+    closeModal();
+    showToast("Backup importado com sucesso.");
+  });
+}
+
+document.getElementById("btn-wipe-data").addEventListener("click", function(){
+  openModal(
+    '<h2>Apagar todos os dados</h2>'+
+    '<p class="card-meta" style="margin-bottom:14px;">Isso vai apagar <strong>permanentemente</strong> todas as ruas, casas, bairros, rotas e o histórico salvos neste aparelho. Essa ação não pode ser desfeita.</p>'+
+    '<div class="modal-actions"><button class="btn-ghost" id="wipe-cancel">Cancelar</button><button class="btn-danger" id="wipe-confirm">Apagar tudo</button></div>'
+  );
+  document.getElementById("wipe-cancel").addEventListener("click", closeModal);
+  document.getElementById("wipe-confirm").addEventListener("click", function(){
+    safeSet("rotas-app-data-prewipe-backup", currentDataSnapshot()); // salvaguarda antes de apagar
+    streets = []; houses = []; neighborhoods = [];
+    routeState = null; ensureRouteState();
+    routeHistory = [];
+    saveAppData();
+    renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
+    populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
+    closeModal();
+    showToast("Todos os dados foram apagados.");
+  });
+});
+
+var ICON_LOCATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>';
+var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+
+function renderListaPanel(){
+  var q = document.getElementById("search-input").value.trim().toLowerCase();
+  var sHtml = "";
+  var filteredStreets = streets.filter(function(s){return s.names.join(" ").toLowerCase().includes(q);});
+  if(streets.length===0){
+    sHtml = '<div class="section-title">Ruas</div><div class="empty">Nenhuma rua cadastrada ainda. Use o menu de editar no mapa.</div>';
+  } else {
+    sHtml = '<div class="section-title">Ruas ('+streets.length+')</div>';
+    filteredStreets.forEach(function(s){
+      var nb = neighborhoodOfPoint(representativePointForStreet(s));
+      sHtml += '<div class="card"><div class="card-row">'+
+        '<div class="grow"><p class="card-title">'+escapeHtml(s.names.join(" / "))+'</p>'+
+        '<p class="card-meta">'+countHousesForStreet(s.id)+' casas'+(nb?' · '+escapeHtml(nb.name):'')+'</p></div>'+
+        '<span class="badge '+(s.twoWay?"badge-twoway":"badge-oneway")+'">'+(s.twoWay?"Mão dupla":"Sentido único")+'</span>'+
+        '<button class="icon-btn" data-locate-street="'+s.id+'">'+ICON_LOCATE+'</button></div></div>';
+    });
+  }
+  document.getElementById("list-streets").innerHTML = sHtml;
+
+  var hHtml = "";
+  var filteredHouses = houses.filter(function(h){ return h.number.toLowerCase().includes(q) || streetLabelForHouse(h).toLowerCase().includes(q); });
+  if(houses.length===0){
+    hHtml = '<div class="section-title">Casas</div><div class="empty">Nenhuma casa cadastrada ainda. Use o menu de editar no mapa.</div>';
+  } else {
+    hHtml = '<div class="section-title">Casas ('+houses.length+')</div>';
+    filteredHouses.forEach(function(h){
+      var label = streetLabelForHouse(h);
+      var nb = neighborhoodOfPoint({lat:h.lat,lng:h.lng});
+      hHtml += '<div class="card"><div class="card-row">'+
+        '<div class="grow"><p class="card-title">Nº '+escapeHtml(h.number)+'</p>'+
+        '<p class="card-meta">'+(label?escapeHtml(label):"sem rua vinculada")+(nb?' · '+escapeHtml(nb.name):'')+'</p></div>'+
+        '<button class="icon-btn" data-locate-house="'+h.id+'">'+ICON_LOCATE+'</button>'+
+        '<button class="icon-btn danger" data-delete-house="'+h.id+'">'+ICON_TRASH+'</button></div></div>';
+    });
+  }
+  document.getElementById("list-houses").innerHTML = hHtml;
+
+  document.querySelectorAll("[data-locate-street]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var s = streets.find(function(x){return x.id===b.dataset.locateStreet;});
+      if(s){ setTab("mapa"); map.fitBounds(s.points.map(function(p){return [p.lat,p.lng];}), {padding:[60,60]}); }
+    });
+  });
+  document.querySelectorAll("[data-locate-house]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var h = houses.find(function(x){return x.id===b.dataset.locateHouse;});
+      if(h){ setTab("mapa"); map.setView([h.lat,h.lng],18); }
+    });
+  });
+  document.querySelectorAll("[data-delete-house]").forEach(function(b){
+    b.addEventListener("click", function(){
+      houses = houses.filter(function(x){return x.id!==b.dataset.deleteHouse;});
+      saveHouses(); renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
+      showToast("Casa excluída.");
+    });
+  });
+}
+
+/* ============================================================
+   ROTA — início / fim / bairro / seleção / histórico
+============================================================ */
+function ensureRouteState(){
+  if(!routeState){ routeState = {selectedIds:[], order:[], completed:[], active:false, endMode:"open", endDone:false, customStart:null, customEnd:null}; }
+  if(routeState.endMode===undefined) routeState.endMode="open";
+  if(routeState.endDone===undefined) routeState.endDone=false;
+  if(routeState.customStart===undefined) routeState.customStart=null;
+  if(routeState.customEnd===undefined) routeState.customEnd=null;
+  if(routeState.completed===undefined) routeState.completed=[];
+  if(routeState.order===undefined) routeState.order=[];
+  return routeState;
+}
+function updateEndpointLabels(){
+  var rs = ensureRouteState();
+  document.getElementById("start-label").textContent = rs.customStart ? "Ponto escolhido no mapa" : "Minha localização atual";
+  document.getElementById("end-label").textContent = rs.endMode==="roundtrip" ? "Volta ao início" : (rs.endMode==="custom" && rs.customEnd ? "Ponto escolhido no mapa" : "Rota aberta (mais eficiente)");
+}
+function startPicking(kind){ pickTarget=kind; setMode("pick"); setTab("mapa"); showToast("Toque no mapa para marcar o "+(kind==="start"?"início":"fim")); }
+document.getElementById("btn-set-start").addEventListener("click", function(){
+  openModal(
+    '<h2>Início da rota</h2>'+
+    '<button class="btn-ghost" id="opt-start-gps" style="width:100%;border:none;border-radius:10px;padding:13px;margin-bottom:8px;">Minha localização atual</button>'+
+    '<button class="btn-ghost" id="opt-start-map" style="width:100%;border:none;border-radius:10px;padding:13px;">Escolher no mapa</button>'
+  );
+  document.getElementById("opt-start-gps").addEventListener("click", function(){
+    var rs=ensureRouteState(); rs.customStart=null; saveRoute(); renderEndpointMarkers(); updateEndpointLabels(); closeModal();
+  });
+  document.getElementById("opt-start-map").addEventListener("click", function(){ closeModal(); startPicking("start"); });
+});
+document.getElementById("btn-set-end").addEventListener("click", function(){
+  openModal(
+    '<h2>Fim da rota</h2>'+
+    '<button class="btn-ghost" id="opt-end-open" style="width:100%;border:none;border-radius:10px;padding:13px;margin-bottom:8px;">Rota aberta (recomendado)</button>'+
+    '<button class="btn-ghost" id="opt-end-round" style="width:100%;border:none;border-radius:10px;padding:13px;margin-bottom:8px;">Voltar ao início</button>'+
+    '<button class="btn-ghost" id="opt-end-map" style="width:100%;border:none;border-radius:10px;padding:13px;">Escolher no mapa</button>'
+  );
+  document.getElementById("opt-end-open").addEventListener("click", function(){
+    var rs=ensureRouteState(); rs.endMode="open"; rs.customEnd=null; saveRoute(); renderEndpointMarkers(); updateEndpointLabels(); closeModal();
+  });
+  document.getElementById("opt-end-round").addEventListener("click", function(){
+    var rs=ensureRouteState(); rs.endMode="roundtrip"; rs.customEnd=null; saveRoute(); renderEndpointMarkers(); updateEndpointLabels(); closeModal();
+  });
+  document.getElementById("opt-end-map").addEventListener("click", function(){ closeModal(); startPicking("end"); });
+});
+
+function populateBairroFilter(){
+  var sel = document.getElementById("bairro-filter");
+  var current = sel.value;
+  sel.innerHTML = '<option value="">Todos os bairros</option>'+neighborhoods.map(function(n){return '<option value="'+n.id+'">'+escapeHtml(n.name)+'</option>';}).join("");
+  sel.value = neighborhoods.some(function(n){return n.id===current;}) ? current : "";
+  bairroFilterId = sel.value;
+}
+document.getElementById("bairro-filter").addEventListener("change", function(e){ bairroFilterId = e.target.value; renderRotaChecklist(); });
+
+document.querySelectorAll("#sel-mode-switch button").forEach(function(b){
+  b.addEventListener("click", function(){
+    document.querySelectorAll("#sel-mode-switch button").forEach(function(x){x.classList.remove("on");});
+    b.classList.add("on"); selectionMode = b.dataset.v; renderRotaChecklist();
+  });
+});
+document.getElementById("rota-search").addEventListener("input", renderRotaChecklist);
+
+function renderRotaChecklist(){
+  updateEndpointLabels();
+  var q = document.getElementById("rota-search").value.trim().toLowerCase();
+  var wrap = document.getElementById("rota-checklist");
+  var rs = ensureRouteState();
+
+  if(selectionMode==="street"){
+    var streetPool = bairroFilterId ? streets.filter(function(s){return streetInNeighborhood(s,bairroFilterId);}) : streets;
+    if(streetPool.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma rua nessa área ainda.</div>'; updateRotaCta(); return; }
+    var filtered = streetPool.filter(function(s){ return s.names.join(" ").toLowerCase().includes(q); });
+    if(filtered.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma rua encontrada.</div>'; updateRotaCta(); return; }
+    var html = "";
+    filtered.forEach(function(s){
+      var key = stopKey("street", s.id);
+      var checked = rs.selectedIds.includes(key);
+      html += '<label class="checkrow"><input type="checkbox" data-stop-check="'+key+'" '+(checked?"checked":"")+'>'+escapeHtml(s.names.join(" / "))+
+        ' <span style="color:var(--text-muted);font-size:12px;">('+(s.twoWay?"mão dupla":"sentido único")+')</span></label>';
+    });
+    wrap.innerHTML = html;
+  } else {
+    var housePool = bairroFilterId ? houses.filter(function(h){return houseInNeighborhood(h,bairroFilterId);}) : houses;
+    if(housePool.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma casa nessa área ainda.</div>'; updateRotaCta(); return; }
+    var byStreet = {};
+    housePool.forEach(function(h){ var key = streetLabelForHouse(h) || "Sem rua vinculada"; (byStreet[key]=byStreet[key]||[]).push(h); });
+    var keys = Object.keys(byStreet).filter(function(k){ return k.toLowerCase().includes(q); }).sort();
+    if(keys.length===0){ wrap.innerHTML = '<div class="empty">Nenhuma rua encontrada.</div>'; updateRotaCta(); return; }
+    var html2 = "";
+    keys.forEach(function(k){
+      html2 += '<div class="section-title">'+escapeHtml(k)+'</div>';
+      byStreet[k].forEach(function(h){
+        var key = stopKey("house", h.id);
+        var checked = rs.selectedIds.includes(key);
+        html2 += '<label class="checkrow"><input type="checkbox" data-stop-check="'+key+'" '+(checked?"checked":"")+'>Nº '+escapeHtml(h.number)+'</label>';
+      });
+    });
+    wrap.innerHTML = html2;
+  }
+  document.querySelectorAll("[data-stop-check]").forEach(function(cb){ cb.addEventListener("change", updateRotaCta); });
+  updateRotaCta();
+}
+function getSelectedStopKeys(){ return Array.from(document.querySelectorAll("[data-stop-check]:checked")).map(function(cb){return cb.dataset.stopCheck;}); }
+function updateRotaCta(){
+  var cta = document.getElementById("rota-cta");
+  var selecting = document.getElementById("rota-select-view").style.display!=="none";
+  if(selecting){
+    var n = getSelectedStopKeys().length;
+    cta.textContent = n>=2 ? "Otimizar rota ("+n+" paradas)" : "Selecione ao menos 2 paradas";
+    cta.disabled = n<2;
+    cta.onclick = computeRoute;
+  }
+}
+document.getElementById("btn-history").addEventListener("click", openHistoryModal);
+function addHistoryEntry(rs){
+  var entry = { id: uid(), date: new Date().toISOString(), stops: rs.order.map(resolveStop).filter(Boolean).map(function(st){return {label:st.label, sub:st.sub};}) };
+  routeHistory.unshift(entry);
+  if(routeHistory.length>50) routeHistory = routeHistory.slice(0,50);
+  saveHistory();
+}
+function openHistoryModal(){
+  if(routeHistory.length===0){
+    openModal('<h2>Histórico de rotas</h2><p class="empty">Nenhuma rota concluída ainda.</p><div class="modal-actions"><button class="btn-primary" id="hist-close" style="width:100%;">Fechar</button></div>');
+  } else {
+    var html = '<h2>Histórico de rotas</h2>';
+    routeHistory.forEach(function(e){
+      html += '<div class="card"><p class="card-title">'+fmtDate(e.date)+'</p><p class="card-meta">'+e.stops.length+' paradas: '+e.stops.map(function(s){return escapeHtml(s.label);}).join(", ")+'</p></div>';
+    });
+    html += '<div class="modal-actions"><button class="btn-primary" id="hist-close" style="width:100%;">Fechar</button></div>';
+    openModal(html);
+  }
+  document.getElementById("hist-close").addEventListener("click", closeModal);
+}
+
+/* ============================================================
+   GRAFO + DIJKSTRA + TSP
+============================================================ */
+function buildGraph(){
+  var nodes=[]; var adj=[]; var keyIndex={};
+  function getNodeId(pt){
+    var k = pt.lat.toFixed(5)+","+pt.lng.toFixed(5);
+    if(keyIndex[k]===undefined){ keyIndex[k]=nodes.length; nodes.push({lat:pt.lat,lng:pt.lng}); adj.push([]); }
+    return keyIndex[k];
+  }
+  function addEdge(a,b,d,bidir){ adj[a].push({to:b,dist:d}); if(bidir) adj[b].push({to:a,dist:d}); }
+  streets.forEach(function(s){
+    for(var i=0;i<s.points.length-1;i++){ var a=s.points[i], b=s.points[i+1]; addEdge(getNodeId(a),getNodeId(b),haversine(a,b),s.twoWay); }
+  });
+  return {nodes:nodes, adj:adj, addExternalNode:function(pt){
+    var id = nodes.length; nodes.push({lat:pt.lat,lng:pt.lng}); adj.push([]);
+    var best=null, bestD=Infinity;
+    streets.forEach(function(s){
+      for(var i=0;i<s.points.length-1;i++){
+        var d = pointToSegmentDistance(pt, s.points[i], s.points[i+1]);
+        if(d<bestD){ bestD=d; best={a:s.points[i], b:s.points[i+1]}; }
+      }
+    });
+    if(best){ addEdge(id, getNodeId(best.a), haversine(pt,best.a), true); addEdge(id, getNodeId(best.b), haversine(pt,best.b), true); }
+    return id;
+  }};
+}
+function dijkstra(adj, sourceId){
+  var n=adj.length; var dist=new Array(n).fill(Infinity); var visited=new Array(n).fill(false);
+  dist[sourceId]=0;
+  for(var iter=0; iter<n; iter++){
+    var u=-1, best=Infinity;
+    for(var i=0;i<n;i++){ if(!visited[i] && dist[i]<best){ best=dist[i]; u=i; } }
+    if(u===-1) break;
+    visited[u]=true;
+    adj[u].forEach(function(e){ if(dist[u]+e.dist < dist[e.to]) dist[e.to]=dist[u]+e.dist; });
+  }
+  return dist;
+}
+function nearestNeighborTour(matrix, n, startIdx){
+  var visited=new Array(n).fill(false); var tour=[startIdx]; visited[startIdx]=true;
+  for(var step=1; step<n; step++){
+    var cur=tour[tour.length-1], best=-1, bestD=Infinity;
+    for(var j=0;j<n;j++){ if(!visited[j] && matrix[cur][j]<bestD){ bestD=matrix[cur][j]; best=j; } }
+    if(best===-1) break;
+    visited[best]=true; tour.push(best);
+  }
+  return tour;
+}
+function nearestNeighborTourFixedEnd(matrix, n, startIdx, endIdx){
+  var visited=new Array(n).fill(false); visited[startIdx]=true; visited[endIdx]=true; var tour=[startIdx];
+  for(var step=0; step<n-2; step++){
+    var cur=tour[tour.length-1], best=-1, bestD=Infinity;
+    for(var j=0;j<n;j++){ if(!visited[j] && matrix[cur][j]<bestD){bestD=matrix[cur][j]; best=j;} }
+    if(best===-1) break;
+    visited[best]=true; tour.push(best);
+  }
+  tour.push(endIdx);
+  return tour;
+}
+function tourCost(tour, matrix){ var c=0; for(var i=0;i<tour.length-1;i++) c+=matrix[tour[i]][tour[i+1]]; return c; }
+function twoOptImprove(tour, matrix, opts){
+  opts = opts || {};
+  var iStart = opts.lockFirst ? 1 : 0;
+  var kMax = (opts.lockLast ? tour.length-2 : tour.length-1);
+  var improved=true, guard=0;
+  while(improved && guard<300){
+    improved=false; guard++;
+    for(var i=iStart;i<kMax;i++){
+      for(var k=i+1;k<=kMax;k++){
+        var newTour = tour.slice(0,i).concat(tour.slice(i,k+1).reverse(), tour.slice(k+1));
+        if(tourCost(newTour,matrix) < tourCost(tour,matrix) - 0.5){ tour=newTour; improved=true; }
+      }
+    }
+  }
+  return tour;
+}
+function solveTSP(matrix, n, hasFixedEnd){
+  var tour;
+  if(hasFixedEnd){ tour=nearestNeighborTourFixedEnd(matrix,n,0,n-1); tour=twoOptImprove(tour,matrix,{lockFirst:true,lockLast:true}); }
+  else { tour=nearestNeighborTour(matrix,n,0); tour=twoOptImprove(tour,matrix,{lockFirst:true,lockLast:false}); }
+  return {tour:tour, dist:tourCost(tour, matrix)};
+}
+
+function computeRoute(){
+  var keys = getSelectedStopKeys();
+  if(keys.length<2) return;
+  var rs = ensureRouteState();
+  rs.selectedIds = keys;
+  var stops = keys.map(resolveStop).filter(Boolean);
+  var startPt = rs.customStart || (userMarker ? userMarker.getLatLng() : {lat:stops[0].lat,lng:stops[0].lng});
+  startPt = {lat:startPt.lat, lng:startPt.lng};
+  var fixedEndPt = null;
+  if(rs.endMode==="roundtrip") fixedEndPt = startPt;
+  else if(rs.endMode==="custom" && rs.customEnd) fixedEndPt = rs.customEnd;
+
+  var warning = ""; var order, totalDist;
+  try{
+    var g = buildGraph();
+    var startNode = g.addExternalNode(startPt);
+    var nodeList = [startNode].concat(stops.map(function(st){return g.addExternalNode({lat:st.lat,lng:st.lng});}));
+    if(fixedEndPt) nodeList.push(g.addExternalNode(fixedEndPt));
+    var n = nodeList.length;
+    var matrix=[]; var unreachable=false;
+    for(var i=0;i<n;i++){
+      var dist = dijkstra(g.adj, nodeList[i]);
+      matrix.push(nodeList.map(function(nid){
+        var d = dist[nid];
+        if(!isFinite(d)){ unreachable=true; return haversine(g.nodes[nodeList[i]], g.nodes[nid])*3; }
+        return d;
+      }));
+    }
+    if(unreachable) warning = "Algumas paradas ainda não estão conectadas por ruas cadastradas — a rota usa estimativa em linha reta para esses trechos.";
+    if(streets.length===0) warning = "Nenhuma rua cadastrada ainda: a ordem foi calculada em linha reta.";
+    var solved = solveTSP(matrix, n, !!fixedEndPt);
+    totalDist = solved.dist;
+    var slice = fixedEndPt ? solved.tour.slice(1, solved.tour.length-1) : solved.tour.slice(1);
+    order = slice.map(function(idx){ return stops[idx-1]; });
+  }catch(err){
+    console.error(err);
+    warning = "Não foi possível usar o mapa de ruas para calcular a rota; foi usada distância em linha reta.";
+    var all=[startPt].concat(stops.map(function(st){return {lat:st.lat,lng:st.lng};}));
+    if(fixedEndPt) all.push(fixedEndPt);
+    var mat=[];
+    for(var a=0;a<all.length;a++){ mat.push(all.map(function(p){return haversine(all[a],p);})); }
+    var solved2 = solveTSP(mat, all.length, !!fixedEndPt);
+    totalDist = solved2.dist;
+    var slice2 = fixedEndPt ? solved2.tour.slice(1, solved2.tour.length-1) : solved2.tour.slice(1);
+    order = slice2.map(function(idx){ return stops[idx-1]; });
+  }
+
+  rs.order = order.map(function(st){ return stopKey(st.kind, st.id); });
+  rs.completed = []; rs.endDone = false; rs.active = false;
+  saveRoute();
+  showRouteResult(order, totalDist, warning);
+}
+
+function showRouteResult(order, totalDist, warning){
+  var rs = ensureRouteState();
+  document.getElementById("rota-select-view").style.display="none";
+  document.getElementById("rota-result-view").style.display="block";
+  document.getElementById("rota-summary").textContent = order.length+" paradas · "+fmtDist(totalDist)+" · aprox. "+fmtTime(totalDist);
+  var warnEl = document.getElementById("rota-warning");
+  if(warning){ warnEl.style.display="block"; warnEl.textContent=warning; } else { warnEl.style.display="none"; }
+
+  var html = order.map(function(st,i){
+    return '<div class="card"><div class="card-row"><div class="stop-num">'+(i+1)+'</div>'+
+      '<div class="grow"><p class="card-title">'+escapeHtml(st.label)+'</p><p class="card-meta">'+escapeHtml(st.sub||"")+'</p></div></div></div>';
+  }).join("");
+  if(rs.endMode==="roundtrip"){
+    html += '<div class="card"><div class="card-row"><div class="stop-num">🏁</div><div class="grow"><p class="card-title">Fim</p><p class="card-meta">Volta ao ponto de início</p></div></div></div>';
+  } else if(rs.endMode==="custom" && rs.customEnd){
+    html += '<div class="card"><div class="card-row"><div class="stop-num">🏁</div><div class="grow"><p class="card-title">Fim</p><p class="card-meta">Ponto escolhido no mapa</p></div></div></div>';
+  }
+  html += '<button class="btn-ghost" id="rota-redo" style="width:100%;border:none;border-radius:10px;padding:12px;margin-top:4px;">Refazer seleção</button>';
+  document.getElementById("rota-stops").innerHTML = html;
+  document.getElementById("rota-redo").addEventListener("click", function(){
+    document.getElementById("rota-select-view").style.display="block";
+    document.getElementById("rota-result-view").style.display="none";
+    updateRotaCta();
+  });
+
+  drawRouteLine(order, rs);
+  renderEndpointMarkers();
+  var cta = document.getElementById("rota-cta");
+  cta.textContent = "Iniciar rota"; cta.disabled=false; cta.onclick = startRouteExecution;
+  cta.style.display = "block";
+}
+function drawRouteLine(order, rs){
+  routeLineLayer.clearLayers();
+  var pts = order.map(function(st){return [st.lat,st.lng];});
+  var startLL = rs.customStart ? [rs.customStart.lat,rs.customStart.lng] : (userMarker ? [userMarker.getLatLng().lat,userMarker.getLatLng().lng] : null);
+  if(startLL) pts = [startLL].concat(pts);
+  if(rs.endMode==="roundtrip" && startLL) pts.push(startLL);
+  else if(rs.endMode==="custom" && rs.customEnd) pts.push([rs.customEnd.lat,rs.customEnd.lng]);
+  if(pts.length>1) L.polyline(pts, {className:"route-line", weight:4, opacity:0.9, dashArray:"1,10", lineCap:"round"}).addTo(routeLineLayer);
+}
+
+/* ============================================================
+   ROTA — execução (barra dinâmica, sem modal)
+============================================================ */
+function startRouteExecution(){ var rs=ensureRouteState(); rs.active=true; saveRoute(); setTab("mapa"); refreshExecUI(); }
+function currentStopInfo(){
+  var rs = ensureRouteState();
+  var remaining = rs.order.filter(function(k){return !rs.completed.includes(k);});
+  if(remaining.length>0){ var st = resolveStop(remaining[0]); if(st) return {kind:st.kind, id:st.id, stop:st, isEnd:false}; }
+  if(rs.endMode!=="open" && !rs.endDone){
+    var pt = rs.endMode==="roundtrip" ? (rs.customStart || (userMarker?{lat:userMarker.getLatLng().lat,lng:userMarker.getLatLng().lng}:null)) : rs.customEnd;
+    if(pt) return {kind:"end", id:null, stop:{lat:pt.lat,lng:pt.lng,label:(rs.endMode==="roundtrip"?"Volta ao início":"Destino final"),sub:""}, isEnd:true};
+  }
+  return null;
+}
+function refreshExecUI(){
+  var rs = ensureRouteState();
+  renderHousesOnMap(); renderStreetsOnMap();
+  var info = currentStopInfo();
+  var bar = document.getElementById("exec-bar");
+  if(!rs.active || !info){
+    bar.classList.remove("show");
+    if(rs.active && !info){ showToast("Rota concluída! 🎉"); addHistoryEntry(rs); rs.active=false; saveRoute(); }
+    return;
+  }
+  bar.classList.add("show");
+  document.getElementById("exec-label").textContent = info.isEnd ? "Destino final" : "Próxima parada";
+  document.getElementById("exec-title").textContent = info.stop.label;
+  document.getElementById("exec-sub").textContent = info.stop.sub || "";
+  document.getElementById("exec-done").textContent = info.isEnd ? "Concluir rota" : "Entregue";
+  map.setView([info.stop.lat, info.stop.lng], Math.max(map.getZoom(),17));
+}
+document.getElementById("exec-done").addEventListener("click", function(){
+  var rs = ensureRouteState(); var info = currentStopInfo();
+  if(!info) return;
+  if(info.isEnd){ rs.endDone = true; } else { rs.completed.push(stopKey(info.kind, info.id)); }
+  saveRoute(); refreshExecUI();
+});
+document.getElementById("exec-stop-route").addEventListener("click", function(){
+  var rs = ensureRouteState(); addHistoryEntry(rs); rs.active=false; saveRoute(); refreshExecUI();
+  showToast("Rota encerrada.");
+});
+
+/* ============================================================
+   INIT
+============================================================ */
+async function init(){
+  initMap();
+
+  var appData = await loadAppData();
+  streets = appData.streets;
+  houses = appData.houses;
+  neighborhoods = appData.neighborhoods;
+  routeState = appData.routeState;
+  ensureRouteState();
+  routeHistory = appData.routeHistory;
+  settings = appData.settings;
+  baseKind = settings.baseKind;
+  applyTheme(settings.theme);
+
+  renderStreetsOnMap();
+  renderHousesOnMap();
+  renderNeighborhoodsOnMap();
+  renderEndpointMarkers();
+  populateBairroFilter();
+  renderListaPanel();
+  renderRotaChecklist();
+
+  if(!hasClaudeStorage && !hasLocalStorage) showToast("Aviso: este navegador não permite salvar dados — eles vão se perder ao fechar.");
+
+  if(routeState && routeState.active){
+    setTimeout(function(){
+      document.getElementById("rota-select-view").style.display="none";
+      document.getElementById("rota-result-view").style.display="block";
+      var order = routeState.order.map(resolveStop).filter(Boolean);
+      showRouteResult(order, 0, "");
+      refreshExecUI();
+    }, 300);
+  }
+}
+init();
+
+})();
+</script>
+</body>
+</html>
