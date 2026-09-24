@@ -2199,6 +2199,33 @@ function computeRoute(){
       return;
     }
     var solved = solveTSP(matrix, n, !!fixedEndPt);
+    // --- Etapa 6C: validação de integridade do tour ---
+    // NN/2-opt (não alterados) podem, em matrizes com mão única, devolver um
+    // tour mais curto que n (parando cedo por falta de vizinho não-visitado
+    // alcançável) sem que isso vire matrix/dist = Infinity — então o checkpoint
+    // de isFinite(solved.dist) sozinho não pega esse caso. Aqui a gente só
+    // audita o RESULTADO devolvido, não decide como ele é calculado.
+    var tourValid = !!(solved && solved.tour && solved.tour.length===n);
+    if(tourValid){
+      var seenIdx = new Array(n).fill(false);
+      for(var vi=0; vi<solved.tour.length; vi++){
+        var vidx = solved.tour[vi];
+        if(typeof vidx!=="number" || vidx<0 || vidx>=n || seenIdx[vidx]){ tourValid=false; break; }
+        seenIdx[vidx] = true;
+      }
+    }
+    if(tourValid && solved.tour[0]!==0) tourValid=false;
+    if(tourValid && fixedEndPt && solved.tour[solved.tour.length-1]!==n-1) tourValid=false;
+    if(tourValid){
+      for(var vi=0; vi<solved.tour.length-1; vi++){
+        if(!isFinite(matrix[solved.tour[vi]][solved.tour[vi+1]])){ tourValid=false; break; }
+      }
+    }
+    if(!tourValid){
+      console.error("Tour do TSP incompleto ou inválido — descartado antes de salvar.", {tour: solved && solved.tour, esperado_n: n});
+      showToast("Não foi possível montar uma rota completa usando as ruas cadastradas.");
+      return;
+    }
     if(!isFinite(solved.dist)){
       // mais raro: alcançável em cada ponta isoladamente, mas nenhuma ordem
       // fecha um circuito só de trechos válidos (ex.: sentido único cruzado) —
