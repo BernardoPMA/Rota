@@ -588,6 +588,88 @@ var hasLocalStorage = (function(){
   catch(e){ return false; }
 })();
 
+/* ============================================================
+   FILA OFFLINE
+   -----------------------------------------------------------
+   Se uma escrita no Supabase falhar (sem internet, por exemplo),
+   em vez de só avisar e perder a mudança, ela fica guardada aqui
+   (no localStorage, sobrevive a fechar o app) e o app tenta enviar
+   de novo sozinho assim que a conexão voltar. Cada item guarda só
+   a ÚLTIMA versão pendente (não uma fila crescente de tentativas),
+   já que reenviar o estado mais recente de uma linha é suficiente.
+============================================================ */
+var PENDING_KEY = "rotas_pending_ops";
+var pendingQueue = { central: null, items: {} }; // items: { "tabela:id": {table,id,op,item} }
+var isFlushingQueue = false;
+var offlineNoticeShown = false; // evita repetir o toast a cada ação enquanto estiver offline
+
+function loadPendingQueue(){
+  if(!hasLocalStorage) return;
+  try{
+    var raw = localStorage.getItem(PENDING_KEY);
+    if(raw){ var parsed = JSON.parse(raw); pendingQueue = { central: parsed.central||null, items: parsed.items||{} }; }
+  }catch(e){ console.error("Falha ao ler fila pendente", e); }
+}
+function savePendingQueue(){
+  if(!hasLocalStorage) return;
+  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(pendingQueue)); }catch(e){ console.error("Falha ao salvar fila pendente", e); }
+}
+function hasPendingOps(){
+  return !!pendingQueue.central || Object.keys(pendingQueue.items).length>0;
+}
+function noteOfflineWrite(){
+  if(offlineNoticeShown) return;
+  offlineNoticeShown = true;
+  showToast("Sem conexão — isso ficou salvo neste aparelho e será enviado assim que a internet voltar.", "warning");
+}
+function queueCentralWrite(value){
+  pendingQueue.central = value;
+  savePendingQueue();
+  noteOfflineWrite();
+}
+function queueItemWrite(table, id, op, item){
+  pendingQueue.items[table+":"+id] = { table:table, id:id, op:op, item:item||null };
+  savePendingQueue();
+  noteOfflineWrite();
+}
+/* tenta reenviar tudo que está pendente, na ordem: primeiro o bloco central,
+   depois cada item. Só remove da fila o que realmente confirmou no servidor;
+   se algo falhar de novo, fica guardado pra próxima tentativa. */
+async function flushPendingQueue(){
+  if(!hasSupabase || isFlushingQueue || !hasPendingOps()) return;
+  isFlushingQueue = true;
+  var hadPending = hasPendingOps();
+  try{
+    if(pendingQueue.central){
+      var res = await supabaseClient.from("rotas_app").upsert({ id: SHARED_ROW_ID, data: pendingQueue.central, writer: CLIENT_ID, updated_at: new Date().toISOString() });
+      if(res.error) throw res.error;
+      pendingQueue.central = null;
+      savePendingQueue();
+    }
+    var keys = Object.keys(pendingQueue.items);
+    for(var i=0;i<keys.length;i++){
+      var op = pendingQueue.items[keys[i]];
+      var r;
+      if(op.op==="delete"){
+        r = await supabaseClient.from(op.table).delete().eq("id", op.id);
+      } else {
+        r = await supabaseClient.from(op.table).upsert({ id: op.id, data: op.item, writer: CLIENT_ID, updated_at: new Date().toISOString() });
+      }
+      if(r.error) throw r.error;
+      delete pendingQueue.items[keys[i]];
+      savePendingQueue(); // salva o progresso a cada item, não só no final
+    }
+    if(hadPending) showToast("Tudo sincronizado.", "success");
+    offlineNoticeShown = false;
+  }catch(e){
+    console.error("Ainda sem conexão, tentando de novo mais tarde.", e);
+  }
+  isFlushingQueue = false;
+}
+loadPendingQueue();
+window.addEventListener("online", flushPendingQueue);
+setInterval(flushPendingQueue, 20000); // rede às vezes some sem disparar o evento "online" (comum em iPhone)
+
 /* primitivas de baixo nível (usadas pela camada central e, se precisar, por qualquer outra coisa) */
 async function safeGet(key, fallback){
   try{
@@ -627,7 +709,10 @@ async function safeSet(key, value){
       return;
     }
     if(hasClaudeStorage){ await window.storage.set(key, JSON.stringify(value), false); }
-  }catch(e){ console.error("storage set falhou", key, e); }
+  }catch(e){
+    console.error("storage set falhou", key, e);
+    if(key===CENTRAL_KEY && hasSupabase) queueCentralWrite(value);
+  }
 }
 
 /* aplica dados que chegaram do Supabase (mudança feita pelo outro usuário)
@@ -645,7 +730,7 @@ function applyRemoteData(raw){
   settings = normalized.settings;
   baseKind = settings.baseKind;
   if(hasLocalStorage) localStorage.setItem("rotas_"+CENTRAL_KEY, JSON.stringify(raw));
-  applyTheme(settings.theme);
+  applyTheme(settings.theme, {persist:false});
   renderRotaChecklist();
   refreshExecUI();
 }
@@ -679,14 +764,14 @@ async function upsertRemoteItem(table, item){
   try{
     var res = await supabaseClient.from(table).upsert({ id: item.id, data: item, writer: CLIENT_ID, updated_at: new Date().toISOString() });
     if(res.error) throw res.error;
-  }catch(e){ console.error("Falha ao sincronizar "+table, e); showToast("Sem conexão — essa alteração ficou só neste aparelho por enquanto.", "warning"); }
+  }catch(e){ console.error("Falha ao sincronizar "+table, e); queueItemWrite(table, item.id, "upsert", item); }
 }
 async function deleteRemoteItem(table, id){
   if(!hasSupabase) return;
   try{
     var res = await supabaseClient.from(table).delete().eq("id", id);
     if(res.error) throw res.error;
-  }catch(e){ console.error("Falha ao excluir em "+table, e); showToast("Sem conexão — essa exclusão ficou só neste aparelho por enquanto.", "warning"); }
+  }catch(e){ console.error("Falha ao excluir em "+table, e); queueItemWrite(table, id, "delete", null); }
 }
 /* substitui a coleção inteira de uma tabela (usado só por importar backup e apagar tudo,
    que trocam tudo de uma vez): apaga do servidor o que não existe mais e upserta o resto */
@@ -705,7 +790,13 @@ async function replaceRemoteCollection(table, oldItems, newItems){
       var upRes = await supabaseClient.from(table).upsert(rows);
       if(upRes.error) throw upRes.error;
     }
-  }catch(e){ console.error("Falha ao substituir "+table, e); showToast("Sem conexão — essa operação ficou só neste aparelho por enquanto.", "warning"); }
+  }catch(e){
+    // sem internet no meio de um import/wipe: enfileira cada mudança individualmente,
+    // do mesmo jeito que uma edição comum — o flush depois cuida de mandar tudo
+    console.error("Falha ao substituir "+table, e);
+    (oldItems||[]).forEach(function(x){ if(!newIds || !newIds[x.id]) queueItemWrite(table, x.id, "delete", null); });
+    newItems.forEach(function(x){ queueItemWrite(table, x.id, "upsert", x); });
+  }
 }
 function readLocalArrayCache(key, fallback){
   if(!hasLocalStorage) return fallback;
@@ -1149,15 +1240,20 @@ document.getElementById("modal-overlay").addEventListener("click", function(e){ 
 /* ============================================================
    TEMA (também decide o estilo do mapa "limpo")
 ============================================================ */
-function applyTheme(themeMode){
+function applyTheme(themeMode, opts){
+  opts = opts || {};
+  var themeChanged = settings.theme !== themeMode;
   document.body.classList.toggle("light", themeMode==="light");
   var icon = document.getElementById("theme-icon");
   icon.innerHTML = themeMode==="light"
     ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>'
     : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>';
   settings.theme = themeMode;
-  saveAppData();
-  if(map) rebuildBaseLayer();
+  if(opts.persist!==false) saveAppData();
+  // só recria o mapa-base se o tema mudou de verdade (ou é a primeiríssima vez);
+  // sem essa checagem, QUALQUER salvamento (inclusive um eco da própria ação)
+  // recriava o mapa do zero e dava a impressão de "piscar"
+  if(map && (themeChanged || !baseLayer)) rebuildBaseLayer();
 }
 document.getElementById("theme-toggle").addEventListener("click", function(){ applyTheme(isLight()?"dark":"light"); });
 
@@ -2110,7 +2206,7 @@ function confirmImportBackup(parsed){
     replaceRemoteCollection("rotas_streets", oldStreets, streets);
     replaceRemoteCollection("rotas_houses", oldHouses, houses);
     replaceRemoteCollection("rotas_neighborhoods", oldNeighborhoods, neighborhoods);
-    applyTheme(settings.theme);
+    applyTheme(settings.theme, {persist:false});
     renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
     populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
     closeModal();
@@ -2952,7 +3048,7 @@ async function continueInit(){
   routeHistory = appData.routeHistory;
   settings = appData.settings;
   baseKind = settings.baseKind;
-  applyTheme(settings.theme);
+  applyTheme(settings.theme, {persist:false});
 
   renderStreetsOnMap();
   renderHousesOnMap();
@@ -2967,6 +3063,7 @@ async function continueInit(){
   setupRealtimeSync();
   setupItemsRealtimeSync();
   setupPresenceSync();
+  flushPendingQueue();
 
   var myRoute = routeStates[currentProfile];
   if(myRoute && myRoute.active){
