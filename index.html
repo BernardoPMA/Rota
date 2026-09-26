@@ -276,6 +276,21 @@
   .user-loc-cone.has-heading{opacity:1;}
   .user-loc-dot{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:#3B82F6; border:2.5px solid #fff; box-shadow:0 0 0 4px rgba(59,130,246,0.22), 0 2px 6px rgba(0,0,0,0.35);}
 
+  #profile-gate{position:fixed; inset:0; z-index:200; background:var(--bg); display:none; align-items:center; justify-content:center; padding:24px;}
+  #profile-gate.show{display:flex;}
+  .profile-gate-card{width:100%; max-width:340px; text-align:center;}
+  .profile-gate-card h1{font-size:22px; margin:0 0 8px; font-weight:700;}
+  .profile-gate-card .sub{color:var(--text-muted); font-size:14px; margin:0 0 22px; line-height:1.4;}
+  .profile-btn{display:block; width:100%; border:1px solid var(--border); background:var(--surface); color:var(--text); border-radius:var(--radius); padding:16px; font-size:16px; font-weight:700; margin-bottom:12px; transition:transform 120ms, background 120ms, color 120ms;}
+  .profile-btn:active{transform:scale(0.97); background:var(--accent); color:var(--accent-ink); border-color:transparent;}
+
+  /* marcador do OUTRO perfil no mapa — mesmo estilo do próprio usuário, em vermelho, com etiqueta de nome */
+  .peer-loc-wrap{width:52px; height:52px; position:relative; transition:opacity 200ms;}
+  .peer-loc-wrap.stale{opacity:0.35;}
+  .peer-loc-pulse{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:rgba(239,68,68,0.4); animation:loc-pulse 2.2s ease-out infinite;}
+  .peer-loc-dot{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:#EF4444; border:2.5px solid #fff; box-shadow:0 0 0 4px rgba(239,68,68,0.22), 0 2px 6px rgba(0,0,0,0.35);}
+  .peer-loc-label{position:absolute; left:50%; top:-4px; transform:translate(-50%,-100%); background:var(--surface-blur); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid var(--border); border-radius:8px; padding:2px 7px; font-size:11px; font-weight:700; white-space:nowrap; color:var(--text); box-shadow:var(--shadow-sm);}
+
   .street-line.street-twoway{stroke:var(--twoway) !important;}
   .street-line.street-oneway{stroke:var(--oneway) !important;}
   .street-line.next-stop{stroke:var(--accent) !important; stroke-width:6 !important;}
@@ -448,6 +463,15 @@
 <div id="modal-overlay"><div id="modal-content"></div></div>
 <div class="toast" id="toast"></div>
 
+<div id="profile-gate">
+  <div class="profile-gate-card">
+    <h1>Quem é você?</h1>
+    <p class="sub">Isso separa sua rota individual da do outro e mostra vocês dois no mapa.</p>
+    <button class="profile-btn" data-profile="Bernardo">Bernardo</button>
+    <button class="profile-btn" data-profile="Thales">Thales</button>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.7/dist/leaflet-rotate.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -461,9 +485,14 @@
 var streets = [];
 var houses  = [];
 var neighborhoods = []; // {id, name, points:[{lat,lng}...]}
-var routeState = null;
+var routeStates = {}; // { "Bernardo": {...}, "Thales": {...} } — rota ativa é individual de cada um
 var routeHistory = [];
 var settings = {theme:"dark", baseKind:"clean"};
+
+var PROFILES = ["Bernardo", "Thales"];
+var currentProfile = null; // escolhido uma vez por aparelho, guardado só localmente (não vai pro Supabase)
+var peerMarker = null; // "bonequinho" do outro perfil no mapa (vermelho)
+var peerStaleTimer = null;
 
 var mode = "view"; // view | edit | bairro | street | house | pick
 var pickTarget = null;
@@ -487,6 +516,29 @@ var suppressRotateDetection = false; // true durante setBearing feito pelo próp
 var tileErrorCount = 0;
 var tileOkCount = 0;
 var netBannerShown = false;
+
+/* ============================================================
+   PERFIL (Bernardo / Thales) — escolha local, não sincronizada
+============================================================ */
+function getStoredProfile(){
+  try{ var p = localStorage.getItem("rotas_profile"); return PROFILES.indexOf(p)!==-1 ? p : null; }
+  catch(e){ return null; }
+}
+function setStoredProfile(p){ try{ localStorage.setItem("rotas_profile", p); }catch(e){} }
+function otherProfile(){ return currentProfile===PROFILES[0] ? PROFILES[1] : PROFILES[0]; }
+function showProfileGate(callback){
+  var gate = document.getElementById("profile-gate");
+  gate.classList.add("show");
+  var btns = gate.querySelectorAll(".profile-btn");
+  function onPick(){
+    currentProfile = this.dataset.profile;
+    setStoredProfile(currentProfile);
+    gate.classList.remove("show");
+    btns.forEach(function(b){ b.removeEventListener("click", onPick); });
+    callback();
+  }
+  btns.forEach(function(b){ b.addEventListener("click", onPick); });
+}
 
 /* ============================================================
    STORAGE — camada central e versionada
@@ -579,7 +631,11 @@ function applyRemoteData(raw){
   streets = normalized.streets;
   houses = normalized.houses;
   neighborhoods = normalized.neighborhoods;
-  routeState = normalized.routeState;
+  // preserva a rota ativa do MEU perfil (pode ter mudanças locais ainda não salvas
+  // no meio de uma corrida); só aceita do servidor as rotas dos OUTROS perfis.
+  var myOwn = routeStates[currentProfile];
+  routeStates = normalized.routeStates;
+  if(myOwn) routeStates[currentProfile] = myOwn;
   ensureRouteState();
   routeHistory = normalized.routeHistory;
   settings = normalized.settings;
@@ -635,7 +691,13 @@ function normalizeAppData(data){
   if(!Array.isArray(data.houses)) data.houses = [];
   if(!Array.isArray(data.neighborhoods)) data.neighborhoods = [];
   if(!Array.isArray(data.routeHistory)) data.routeHistory = [];
-  if(data.routeState===undefined) data.routeState = null;
+  if(!data.routeStates || typeof data.routeStates!=="object"){
+    // migração do formato antigo (uma única rota, sem perfis): joga no perfil atual
+    data.routeStates = {};
+    if(data.routeState) data.routeStates[currentProfile || PROFILES[0]] = data.routeState;
+  }
+  delete data.routeState; // campo antigo, substituído por routeStates
+  PROFILES.forEach(function(p){ if(data.routeStates[p]===undefined) data.routeStates[p] = null; });
   if(!data.settings || typeof data.settings!=="object") data.settings = {};
   if(!data.settings.theme) data.settings.theme = "dark";
   if(!data.settings.baseKind) data.settings.baseKind = "labeled";
@@ -688,12 +750,13 @@ async function loadAppData(){
 
 /* salva TUDO de uma vez, sempre no formato novo e completo */
 function saveAppData(){
+  routeStates[currentProfile] = ensureRouteState();
   var payload = {
     schemaVersion: SCHEMA_VERSION,
     streets: streets,
     houses: houses,
     neighborhoods: neighborhoods,
-    routeState: routeState,
+    routeStates: routeStates,
     routeHistory: routeHistory,
     settings: settings
   };
@@ -1171,6 +1234,74 @@ function placeUserMarker(ll){
   var icon = L.divIcon({className:"", html:html, iconSize:[52,52], iconAnchor:[26,26]});
   userMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map);
 }
+
+/* ============================================================
+   PRESENÇA — mostra o "bonequinho" do outro perfil no mapa (vermelho),
+   em tempo real, via Supabase. Minha própria posição é enviada com
+   throttle (não a cada tique de GPS) pra não sobrecarregar o banco.
+============================================================ */
+var lastPresenceSentAt = 0;
+var PRESENCE_MIN_INTERVAL_MS = 6000;
+var PRESENCE_STALE_MS = 120000; // sem atualização há 2min -> mostra "desconectado" (marcador esmaecido)
+
+function placePeerMarker(ll, name){
+  if(peerMarker){
+    peerMarker.setLatLng(ll);
+  } else {
+    var html = '<div class="peer-loc-wrap">'+
+      '<div class="peer-loc-label">'+escapeHtml(name)+'</div>'+
+      '<div class="peer-loc-pulse"></div>'+
+      '<div class="peer-loc-dot"></div></div>';
+    var icon = L.divIcon({className:"", html:html, iconSize:[52,52], iconAnchor:[26,26]});
+    peerMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map);
+  }
+  markPeerFresh();
+}
+function markPeerFresh(){
+  var el = peerMarker && peerMarker.getElement();
+  var wrap = el && el.querySelector(".peer-loc-wrap");
+  if(wrap) wrap.classList.remove("stale");
+  if(peerStaleTimer) clearTimeout(peerStaleTimer);
+  peerStaleTimer = setTimeout(function(){
+    var el2 = peerMarker && peerMarker.getElement();
+    var wrap2 = el2 && el2.querySelector(".peer-loc-wrap");
+    if(wrap2) wrap2.classList.add("stale");
+  }, PRESENCE_STALE_MS);
+}
+function sendMyPresence(ll){
+  if(!hasSupabase) return;
+  var now = Date.now();
+  if(now - lastPresenceSentAt < PRESENCE_MIN_INTERVAL_MS) return;
+  lastPresenceSentAt = now;
+  supabaseClient.from("rotas_presence")
+    .upsert({ profile: currentProfile, lat: ll[0], lng: ll[1], updated_at: new Date().toISOString() })
+    .then(function(res){ if(res.error) console.error("presença falhou", res.error); });
+}
+function setupPresenceSync(){
+  if(!hasSupabase) return;
+  // pega a última posição conhecida do outro perfil assim que o app abre
+  supabaseClient.from("rotas_presence").select("*").eq("profile", otherProfile()).maybeSingle()
+    .then(function(res){
+      if(res.data && res.data.lat!=null && res.data.lng!=null){
+        placePeerMarker([res.data.lat, res.data.lng], otherProfile());
+        var ageMs = Date.now() - new Date(res.data.updated_at).getTime();
+        if(ageMs > PRESENCE_STALE_MS){
+          var el = peerMarker.getElement();
+          var wrap = el && el.querySelector(".peer-loc-wrap");
+          if(wrap) wrap.classList.add("stale");
+        }
+      }
+    });
+  // ouve atualizações em tempo real da posição do outro perfil
+  supabaseClient
+    .channel("rotas_presence_changes")
+    .on("postgres_changes", { event:"*", schema:"public", table:"rotas_presence", filter:"profile=eq."+otherProfile() }, function(payload){
+      if(payload.new && payload.new.lat!=null && payload.new.lng!=null){
+        placePeerMarker([payload.new.lat, payload.new.lng], otherProfile());
+      }
+    })
+    .subscribe();
+}
 function revealHeadingCone(){
   var el = userMarker && userMarker.getElement();
   var cone = el && el.querySelector(".user-loc-cone");
@@ -1239,6 +1370,7 @@ function startLiveLocation(){
     watchId = navigator.geolocation.watchPosition(function(pos){
       var ll=[pos.coords.latitude,pos.coords.longitude];
       placeUserMarker(ll);
+      sendMyPresence(ll);
       if(!startLiveLocation._centered){
         map.setView(ll,17);
         startLiveLocation._centered=true;
@@ -1291,6 +1423,7 @@ document.getElementById("locate-btn").addEventListener("click", function(){
       var ll=[pos.coords.latitude,pos.coords.longitude];
       map.setView(ll,17);
       placeUserMarker(ll);
+      sendMyPresence(ll);
       if(followHeading && smoothedHeading!==null) animateBearingTo((-smoothedHeading+360)%360, 300);
       updateNorthButtonVisibility();
     }, function(){ showToast("Não foi possível obter sua localização.", "error"); });
@@ -1650,7 +1783,8 @@ function updateStreetLabelRotations(){
 }
 function renderHousesOnMap(){
   houseLayerGroup.clearLayers();
-  var doneSet = routeState && routeState.completed ? new Set(routeState.completed) : new Set();
+  var rsCur = routeStates[currentProfile];
+  var doneSet = rsCur && rsCur.completed ? new Set(rsCur.completed) : new Set();
   var nextKey = currentNextStopKey();
   houses.forEach(function(h){
     var key = stopKey("house", h.id);
@@ -1743,7 +1877,7 @@ function currentDataSnapshot(){
     streets: streets,
     houses: houses,
     neighborhoods: neighborhoods,
-    routeState: routeState,
+    routeStates: routeStates,
     routeHistory: routeHistory,
     settings: settings
   };
@@ -1803,7 +1937,7 @@ function confirmImportBackup(parsed){
     streets = normalized.streets;
     houses = normalized.houses;
     neighborhoods = normalized.neighborhoods;
-    routeState = normalized.routeState;
+    routeStates = normalized.routeStates;
     ensureRouteState();
     routeHistory = normalized.routeHistory;
     settings = normalized.settings;
@@ -1827,7 +1961,8 @@ document.getElementById("btn-wipe-data").addEventListener("click", function(){
   document.getElementById("wipe-confirm").addEventListener("click", function(){
     safeSet("rotas-app-data-prewipe-backup", currentDataSnapshot()); // salvaguarda antes de apagar
     streets = []; houses = []; neighborhoods = [];
-    routeState = null; ensureRouteState();
+    routeStates = {};
+    ensureRouteState();
     routeHistory = [];
     saveAppData();
     renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
@@ -1982,14 +2117,15 @@ function renderListaPanel(){
    ROTA — início / fim / bairro / seleção / histórico
 ============================================================ */
 function ensureRouteState(){
-  if(!routeState){ routeState = {selectedIds:[], order:[], completed:[], active:false, endMode:"open", endDone:false, customStart:null, customEnd:null}; }
-  if(routeState.endMode===undefined) routeState.endMode="open";
-  if(routeState.endDone===undefined) routeState.endDone=false;
-  if(routeState.customStart===undefined) routeState.customStart=null;
-  if(routeState.customEnd===undefined) routeState.customEnd=null;
-  if(routeState.completed===undefined) routeState.completed=[];
-  if(routeState.order===undefined) routeState.order=[];
-  return routeState;
+  if(!routeStates[currentProfile]){ routeStates[currentProfile] = {selectedIds:[], order:[], completed:[], active:false, endMode:"open", endDone:false, customStart:null, customEnd:null}; }
+  var rsObj = routeStates[currentProfile];
+  if(rsObj.endMode===undefined) rsObj.endMode="open";
+  if(rsObj.endDone===undefined) rsObj.endDone=false;
+  if(rsObj.customStart===undefined) rsObj.customStart=null;
+  if(rsObj.customEnd===undefined) rsObj.customEnd=null;
+  if(rsObj.completed===undefined) rsObj.completed=[];
+  if(rsObj.order===undefined) rsObj.order=[];
+  return rsObj;
 }
 function updateEndpointLabels(){
   var rs = ensureRouteState();
@@ -2625,13 +2761,21 @@ document.getElementById("exec-stop-route").addEventListener("click", function(){
    INIT
 ============================================================ */
 async function init(){
+  currentProfile = getStoredProfile();
+  if(!currentProfile){
+    showProfileGate(continueInit);
+  } else {
+    continueInit();
+  }
+}
+async function continueInit(){
   initMap();
 
   var appData = await loadAppData();
   streets = appData.streets;
   houses = appData.houses;
   neighborhoods = appData.neighborhoods;
-  routeState = appData.routeState;
+  routeStates = appData.routeStates;
   ensureRouteState();
   routeHistory = appData.routeHistory;
   settings = appData.settings;
@@ -2649,12 +2793,14 @@ async function init(){
   if(!hasClaudeStorage && !hasLocalStorage) showToast("Aviso: este navegador não permite salvar dados — eles vão se perder ao fechar.", "warning");
 
   setupRealtimeSync();
+  setupPresenceSync();
 
-  if(routeState && routeState.active){
+  var myRoute = routeStates[currentProfile];
+  if(myRoute && myRoute.active){
     setTimeout(function(){
       document.getElementById("rota-select-view").style.display="none";
       document.getElementById("rota-result-view").style.display="block";
-      var order = routeState.order.map(resolveStop).filter(Boolean);
+      var order = myRoute.order.map(resolveStop).filter(Boolean);
       showRouteResult(order, 0, "");
       refreshExecUI();
     }, 300);
