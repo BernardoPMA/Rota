@@ -1019,6 +1019,22 @@ function initMap(){
           renderer._updateTransform(map.getCenter(), map.getZoom());
         }
       }catch(e){ /* API interna indisponível: sem problema, sincroniza ao soltar o dedo */ }
+      /* Extensão desta mesma correção pros marcadores (casas, rótulos de
+         rua/bairro, bandeiras de início/fim e localização do usuário):
+         eles são divIcon e o esperado é já acompanharem o _move() do
+         pinch sozinhos, mas na prática, durante o gesto rápido de dois
+         dedos no iPhone, ficavam visivelmente atrasados até soltar o
+         dedo. marker.update() é a própria API pública do Leaflet pra
+         reposicionar um marcador já existente (recalcula a projeção
+         atual — com rotação, se houver — e move só o elemento; nunca
+         recria o ícone), então é seguro chamar no mesmo throttle de
+         1 frame pendente usado acima, sem custo extra de rAF. */
+      try{
+        [houseLayerGroup, streetLayerGroup, neighborhoodLayerGroup, endpointLayerGroup].forEach(function(group){
+          group.eachLayer(function(l){ if(l instanceof L.Marker && l.update) l.update(); });
+        });
+        if(userMarker && userMarker.update) userMarker.update();
+      }catch(e){ /* mesma rede de segurança: sincroniza ao soltar o dedo */ }
       applyZoomTierClass(); // mesma malha de frame, sem custo extra de rAF
     });
   }
@@ -2463,6 +2479,33 @@ function currentStopInfo(){
   }
   return null;
 }
+/* Corrige o fim de rota: antes só rs.active=false era setado (e o popup
+   aparecia), mas a seleção antiga, a lista de paradas concluídas e a tela
+   de resultado continuavam lá — então o app não voltava de verdade pra um
+   estado pronto pra nova rota. Isso NÃO mexe em routeState.history,
+   ROTAS_APP_DATA, ruas/casas/bairros nem em nenhum cálculo; só zera os
+   campos da corrida que já terminou e devolve a aba Rota pra tela de
+   seleção. */
+function finishRouteExecution(){
+  var rs = ensureRouteState();
+  rs.active = false;
+  rs.order = [];
+  rs.completed = [];
+  rs.selectedIds = [];
+  rs.endDone = false;
+  saveRoute();
+  routeLineLayer.clearLayers();
+  document.getElementById("rota-warning").style.display = "none";
+  document.getElementById("rota-select-view").style.display = "block";
+  document.getElementById("rota-result-view").style.display = "none";
+  document.getElementById("exec-bar").classList.remove("show");
+  var rotaTabBtn = document.querySelector('#tabbar button[data-tab="rota"]');
+  if(rotaTabBtn) rotaTabBtn.classList.remove("route-active");
+  var curTabBtn = document.querySelector('#tabbar button.active');
+  if(curTabBtn && curTabBtn.dataset.tab==="mapa") document.getElementById("edit-menu-btn").style.display = "flex";
+  renderHousesOnMap(); renderStreetsOnMap(); renderEndpointMarkers();
+  renderRotaChecklist(); // já chama updateRotaCta() no final
+}
 function refreshExecUI(){
   var rs = ensureRouteState();
   renderHousesOnMap(); renderStreetsOnMap();
@@ -2473,7 +2516,11 @@ function refreshExecUI(){
     document.querySelector('#tabbar button[data-tab="rota"]').classList.remove("route-active");
     var curTabBtn2 = document.querySelector('#tabbar button.active');
     if(curTabBtn2 && curTabBtn2.dataset.tab==="mapa") document.getElementById("edit-menu-btn").style.display = "flex";
-    if(rs.active && !info){ showToast("Rota concluída! 🎉", "success"); addHistoryEntry(rs); rs.active=false; saveRoute(); }
+    if(rs.active && !info){
+      showToast("Rota concluída! 🎉", "success");
+      addHistoryEntry(rs);
+      finishRouteExecution();
+    }
     return;
   }
   bar.classList.add("show");
@@ -2497,7 +2544,9 @@ document.getElementById("exec-done").addEventListener("click", function(){
   saveRoute(); refreshExecUI();
 });
 document.getElementById("exec-stop-route").addEventListener("click", function(){
-  var rs = ensureRouteState(); addHistoryEntry(rs); rs.active=false; saveRoute(); refreshExecUI();
+  var rs = ensureRouteState();
+  addHistoryEntry(rs);
+  finishRouteExecution();
   showToast("Rota encerrada.", "warning");
 });
 
