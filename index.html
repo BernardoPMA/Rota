@@ -625,12 +625,10 @@ async function safeSet(key, value){
 }
 
 /* aplica dados que chegaram do Supabase (mudança feita pelo outro usuário)
-   sem precisar recarregar a página inteira */
+   sem precisar recarregar a página inteira. Ruas/casas/bairros NÃO estão mais
+   aqui: cada um tem sua própria tabela e seu próprio realtime (ver mais abaixo) */
 function applyRemoteData(raw){
   var normalized = normalizeAppData(raw);
-  streets = normalized.streets;
-  houses = normalized.houses;
-  neighborhoods = normalized.neighborhoods;
   // preserva a rota ativa do MEU perfil (pode ter mudanças locais ainda não salvas
   // no meio de uma corrida); só aceita do servidor as rotas dos OUTROS perfis.
   var myOwn = routeStates[currentProfile];
@@ -641,8 +639,8 @@ function applyRemoteData(raw){
   settings = normalized.settings;
   baseKind = settings.baseKind;
   if(hasLocalStorage) localStorage.setItem("rotas_"+CENTRAL_KEY, JSON.stringify(raw));
-  renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
-  populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
+  applyTheme(settings.theme);
+  renderRotaChecklist();
   refreshExecUI();
 }
 
@@ -655,6 +653,85 @@ function setupRealtimeSync(){
       if(payload.new && payload.new.data) applyRemoteData(payload.new.data);
     })
     .subscribe();
+}
+
+/* ============================================================
+   RUAS / CASAS / BAIRROS — cada item é sua própria linha numa
+   tabela do Supabase (rotas_streets, rotas_houses, rotas_neighborhoods),
+   em vez de tudo dentro de um JSON único. Assim, editar UMA casa nunca
+   corre o risco de sobrescrever uma rua que o outro editou ao mesmo tempo:
+   cada upsert/delete mexe só na própria linha.
+============================================================ */
+async function fetchTableAsArray(table){
+  var res = await supabaseClient.from(table).select("data").order("updated_at", {ascending:true});
+  if(res.error) throw res.error;
+  return (res.data || []).map(function(row){ return row.data; });
+}
+async function upsertRemoteItem(table, item){
+  if(!hasSupabase) return;
+  try{
+    var res = await supabaseClient.from(table).upsert({ id: item.id, data: item, updated_at: new Date().toISOString() });
+    if(res.error) throw res.error;
+  }catch(e){ console.error("Falha ao sincronizar "+table, e); showToast("Sem conexão — essa alteração ficou só neste aparelho por enquanto.", "warning"); }
+}
+async function deleteRemoteItem(table, id){
+  if(!hasSupabase) return;
+  try{
+    var res = await supabaseClient.from(table).delete().eq("id", id);
+    if(res.error) throw res.error;
+  }catch(e){ console.error("Falha ao excluir em "+table, e); showToast("Sem conexão — essa exclusão ficou só neste aparelho por enquanto.", "warning"); }
+}
+/* substitui a coleção inteira de uma tabela (usado só por importar backup e apagar tudo,
+   que trocam tudo de uma vez): apaga do servidor o que não existe mais e upserta o resto */
+async function replaceRemoteCollection(table, oldItems, newItems){
+  if(!hasSupabase) return;
+  try{
+    var newIds = {};
+    newItems.forEach(function(x){ newIds[x.id]=true; });
+    var toDelete = (oldItems||[]).filter(function(x){ return !newIds[x.id]; }).map(function(x){ return x.id; });
+    if(toDelete.length){
+      var delRes = await supabaseClient.from(table).delete().in("id", toDelete);
+      if(delRes.error) throw delRes.error;
+    }
+    if(newItems.length){
+      var rows = newItems.map(function(x){ return {id:x.id, data:x, updated_at:new Date().toISOString()}; });
+      var upRes = await supabaseClient.from(table).upsert(rows);
+      if(upRes.error) throw upRes.error;
+    }
+  }catch(e){ console.error("Falha ao substituir "+table, e); showToast("Sem conexão — essa operação ficou só neste aparelho por enquanto.", "warning"); }
+}
+function readLocalArrayCache(key, fallback){
+  if(!hasLocalStorage) return fallback;
+  try{ var v = localStorage.getItem(key); return v!==null ? JSON.parse(v) : fallback; }
+  catch(e){ return fallback; }
+}
+/* aplica no array local uma mudança (insert/update/delete) que chegou pelo
+   realtime de UMA das três tabelas de item, sem precisar recarregar nada */
+function applyItemChange(payload, getArr, setArr, rerender){
+  var arr = getArr().slice();
+  if(payload.eventType === "DELETE"){
+    var oldId = payload.old && payload.old.id;
+    arr = arr.filter(function(x){ return x.id !== oldId; });
+  } else {
+    var item = payload.new && payload.new.data;
+    if(!item) return;
+    var idx = arr.findIndex(function(x){ return x.id === item.id; });
+    if(idx>=0) arr[idx] = item; else arr.push(item);
+  }
+  setArr(arr);
+  rerender();
+}
+function setupItemsRealtimeSync(){
+  if(!hasSupabase) return;
+  supabaseClient.channel("rotas_streets_sync").on("postgres_changes", {event:"*", schema:"public", table:"rotas_streets"}, function(payload){
+    applyItemChange(payload, function(){return streets;}, function(v){streets=v;}, function(){ renderStreetsOnMap(); renderListaPanel(); renderRotaChecklist(); });
+  }).subscribe();
+  supabaseClient.channel("rotas_houses_sync").on("postgres_changes", {event:"*", schema:"public", table:"rotas_houses"}, function(payload){
+    applyItemChange(payload, function(){return houses;}, function(v){houses=v;}, function(){ renderHousesOnMap(); renderListaPanel(); renderRotaChecklist(); });
+  }).subscribe();
+  supabaseClient.channel("rotas_neighborhoods_sync").on("postgres_changes", {event:"*", schema:"public", table:"rotas_neighborhoods"}, function(payload){
+    applyItemChange(payload, function(){return neighborhoods;}, function(v){neighborhoods=v;}, function(){ renderNeighborhoodsOnMap(); populateBairroFilter(); renderListaPanel(); });
+  }).subscribe();
 }
 async function rawGetClaude(key){
   if(!hasClaudeStorage) return undefined;
@@ -716,9 +793,9 @@ function normalizeAppData(data){
   return data;
 }
 
-/* carrega os dados: se já existir o formato novo, usa ele; senão,
-   tenta migrar automaticamente do formato antigo (multi-chave) */
-async function loadAppData(){
+/* carrega ruas/casas/bairros/histórico/perfis: se já existir o formato novo,
+   usa ele; senão, tenta migrar automaticamente do formato antigo (multi-chave) */
+async function loadCentralAppData(){
   var central = await safeGet(CENTRAL_KEY, null);
   if(central && central.schemaVersion){
     return normalizeAppData(central);
@@ -748,19 +825,70 @@ async function loadAppData(){
   return migrated;
 }
 
-/* salva TUDO de uma vez, sempre no formato novo e completo */
+/* carrega TUDO: o blob central (perfis, histórico, config) mais ruas/casas/bairros,
+   que — quando o Supabase está configurado — vêm das tabelas próprias (fonte de
+   verdade), não mais do blob. Só na primeira vez, se as tabelas estiverem vazias
+   mas o blob antigo já tinha dados, faz a migração automática pras tabelas novas. */
+async function loadAppData(){
+  var base = await loadCentralAppData();
+  if(!hasSupabase) return base; // modo só-local: streets/houses/neighborhoods já vieram certos do blob acima
+
+  try{
+    var remoteStreets = await fetchTableAsArray("rotas_streets");
+    var remoteHouses = await fetchTableAsArray("rotas_houses");
+    var remoteNeighborhoods = await fetchTableAsArray("rotas_neighborhoods");
+    var tablesEmpty = remoteStreets.length===0 && remoteHouses.length===0 && remoteNeighborhoods.length===0;
+    var blobHasData = (base.streets && base.streets.length) || (base.houses && base.houses.length) || (base.neighborhoods && base.neighborhoods.length);
+    if(tablesEmpty && blobHasData){
+      // migração única: o que já existia no formato antigo (dentro do blob) vira uma linha por item nas tabelas novas
+      await Promise.all(
+        base.streets.map(function(s){ return upsertRemoteItem("rotas_streets", s); })
+        .concat(base.houses.map(function(h){ return upsertRemoteItem("rotas_houses", h); }))
+        .concat(base.neighborhoods.map(function(n){ return upsertRemoteItem("rotas_neighborhoods", n); }))
+      );
+      remoteStreets = base.streets; remoteHouses = base.houses; remoteNeighborhoods = base.neighborhoods;
+      showToast("Ruas e casas migradas para o novo formato.", "success");
+    }
+    base.streets = remoteStreets;
+    base.houses = remoteHouses;
+    base.neighborhoods = remoteNeighborhoods;
+    if(hasLocalStorage){
+      localStorage.setItem("rotas_streets_cache", JSON.stringify(remoteStreets));
+      localStorage.setItem("rotas_houses_cache", JSON.stringify(remoteHouses));
+      localStorage.setItem("rotas_neighborhoods_cache", JSON.stringify(remoteNeighborhoods));
+    }
+  }catch(e){
+    console.error("Falha ao buscar ruas/casas/bairros do Supabase, usando cache local.", e);
+    showToast("Sem conexão com o servidor — mostrando dados salvos neste aparelho.", "warning");
+    base.streets = readLocalArrayCache("rotas_streets_cache", base.streets);
+    base.houses = readLocalArrayCache("rotas_houses_cache", base.houses);
+    base.neighborhoods = readLocalArrayCache("rotas_neighborhoods_cache", base.neighborhoods);
+  }
+  return base;
+}
+
+/* salva perfis/histórico/config sempre; ruas/casas/bairros só entram aqui no
+   modo sem Supabase (nesse caso o blob central continua sendo a única fonte) */
 function saveAppData(){
   routeStates[currentProfile] = ensureRouteState();
   var payload = {
     schemaVersion: SCHEMA_VERSION,
-    streets: streets,
-    houses: houses,
-    neighborhoods: neighborhoods,
     routeStates: routeStates,
     routeHistory: routeHistory,
     settings: settings
   };
+  if(!hasSupabase){
+    payload.streets = streets;
+    payload.houses = houses;
+    payload.neighborhoods = neighborhoods;
+  }
   safeSet(CENTRAL_KEY, payload);
+  if(hasLocalStorage){
+    // cache de leitura offline, mesmo com Supabase configurado
+    localStorage.setItem("rotas_streets_cache", JSON.stringify(streets));
+    localStorage.setItem("rotas_houses_cache", JSON.stringify(houses));
+    localStorage.setItem("rotas_neighborhoods_cache", JSON.stringify(neighborhoods));
+  }
 }
 function saveStreets(){ saveAppData(); }
 function saveHouses(){ saveAppData(); }
@@ -1610,17 +1738,22 @@ function openStreetForm(existing, newPoints){
     syncNames();
     var finalNames = names.map(function(n){return n.trim();}).filter(Boolean);
     if(finalNames.length===0){ showToast("Dê ao menos um nome para a rua.", "warning"); return; }
-    if(existing){ existing.names=finalNames; existing.twoWay=twoWay; }
-    else { streets.push({id:uid(), names:finalNames, twoWay:twoWay, points:newPoints}); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    var savedStreet;
+    if(existing){ existing.names=finalNames; existing.twoWay=twoWay; savedStreet=existing; }
+    else { savedStreet={id:uid(), names:finalNames, twoWay:twoWay, points:newPoints}; streets.push(savedStreet); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
     saveStreets();
+    upsertRemoteItem("rotas_streets", savedStreet);
     renderStreetsOnMap(); renderListaPanel(); renderRotaChecklist();
     closeModal(); showToast("Rua salva.", "success");
   });
   if(existing){
     document.getElementById("f-street-delete").addEventListener("click", function(){
+      var affectedHouses = houses.filter(function(h){return h.streetId===existing.id;});
       streets = streets.filter(function(x){return x.id!==existing.id;});
-      houses.forEach(function(h){ if(h.streetId===existing.id) h.streetId=null; });
+      affectedHouses.forEach(function(h){ h.streetId=null; });
       saveStreets(); saveHouses();
+      deleteRemoteItem("rotas_streets", existing.id);
+      affectedHouses.forEach(function(h){ upsertRemoteItem("rotas_houses", h); });
       renderStreetsOnMap(); renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
       closeModal(); showToast("Rua excluída.", "success");
     });
@@ -1660,9 +1793,11 @@ function openNeighborhoodForm(existing, newPoints){
     var name = document.getElementById("f-bairro-name").value.trim();
     var color = document.getElementById("f-bairro-color").value;
     if(!name){ showToast("Dê um nome para o bairro.", "warning"); return; }
-    if(existing){ existing.name = name; existing.color = color; }
-    else { neighborhoods.push({id:uid(), name:name, points:newPoints, color:color}); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    var savedNeighborhood;
+    if(existing){ existing.name = name; existing.color = color; savedNeighborhood=existing; }
+    else { savedNeighborhood={id:uid(), name:name, points:newPoints, color:color}; neighborhoods.push(savedNeighborhood); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
     saveNeighborhoods();
+    upsertRemoteItem("rotas_neighborhoods", savedNeighborhood);
     renderNeighborhoodsOnMap(); populateBairroFilter(); renderListaPanel();
     closeModal(); showToast("Bairro salvo.", "success");
   });
@@ -1674,6 +1809,7 @@ function openNeighborhoodForm(existing, newPoints){
       // como "sem bairro" assim que o polígono deixa de existir.
       neighborhoods = neighborhoods.filter(function(x){return x.id!==existing.id;});
       saveNeighborhoods();
+      deleteRemoteItem("rotas_neighborhoods", existing.id);
       renderNeighborhoodsOnMap(); populateBairroFilter(); renderListaPanel();
       closeModal(); showToast("Bairro excluído.", "success");
     });
@@ -1723,9 +1859,11 @@ function openHouseForm(existing, pt){
     var number = document.getElementById("f-house-number").value.trim();
     var streetId = document.getElementById("f-house-street").value;
     if(!number){ showToast("Informe o número da casa.", "warning"); return; }
-    if(existing){ existing.number=number; existing.streetId=streetId||null; }
-    else { houses.push({id:uid(), number:number, streetId:streetId||null, lat:pt.lat, lng:pt.lng}); }
+    var savedHouse;
+    if(existing){ existing.number=number; existing.streetId=streetId||null; savedHouse=existing; }
+    else { savedHouse={id:uid(), number:number, streetId:streetId||null, lat:pt.lat, lng:pt.lng}; houses.push(savedHouse); }
     saveHouses();
+    upsertRemoteItem("rotas_houses", savedHouse);
     renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
     closeModal(); showToast("Casa salva.", "success");
   });
@@ -1733,6 +1871,7 @@ function openHouseForm(existing, pt){
     document.getElementById("f-house-delete").addEventListener("click", function(){
       houses = houses.filter(function(h){return h.id!==existing.id;});
       saveHouses();
+      deleteRemoteItem("rotas_houses", existing.id);
       renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
       closeModal(); showToast("Casa excluída.", "success");
     });
@@ -1933,6 +2072,7 @@ function confirmImportBackup(parsed){
   document.getElementById("import-cancel").addEventListener("click", closeModal);
   document.getElementById("import-confirm").addEventListener("click", function(){
     safeSet("rotas-app-data-preimport-backup", currentDataSnapshot()); // salvaguarda antes de sobrescrever
+    var oldStreets = streets, oldHouses = houses, oldNeighborhoods = neighborhoods;
     var normalized = normalizeAppData(parsed);
     streets = normalized.streets;
     houses = normalized.houses;
@@ -1943,6 +2083,9 @@ function confirmImportBackup(parsed){
     settings = normalized.settings;
     baseKind = settings.baseKind;
     saveAppData();
+    replaceRemoteCollection("rotas_streets", oldStreets, streets);
+    replaceRemoteCollection("rotas_houses", oldHouses, houses);
+    replaceRemoteCollection("rotas_neighborhoods", oldNeighborhoods, neighborhoods);
     applyTheme(settings.theme);
     renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
     populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
@@ -1960,11 +2103,15 @@ document.getElementById("btn-wipe-data").addEventListener("click", function(){
   document.getElementById("wipe-cancel").addEventListener("click", closeModal);
   document.getElementById("wipe-confirm").addEventListener("click", function(){
     safeSet("rotas-app-data-prewipe-backup", currentDataSnapshot()); // salvaguarda antes de apagar
+    var oldStreets = streets, oldHouses = houses, oldNeighborhoods = neighborhoods;
     streets = []; houses = []; neighborhoods = [];
     routeStates = {};
     ensureRouteState();
     routeHistory = [];
     saveAppData();
+    replaceRemoteCollection("rotas_streets", oldStreets, []);
+    replaceRemoteCollection("rotas_houses", oldHouses, []);
+    replaceRemoteCollection("rotas_neighborhoods", oldNeighborhoods, []);
     renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
     populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
     closeModal();
@@ -2107,7 +2254,8 @@ function renderListaPanel(){
     b.addEventListener("click", function(e){
       e.stopPropagation();
       houses = houses.filter(function(x){return x.id!==b.dataset.deleteHouse;});
-      saveHouses(); renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
+      saveHouses(); deleteRemoteItem("rotas_houses", b.dataset.deleteHouse);
+      renderHousesOnMap(); renderListaPanel(); renderRotaChecklist();
       showToast("Casa excluída.", "success");
     });
   });
@@ -2793,6 +2941,7 @@ async function continueInit(){
   if(!hasClaudeStorage && !hasLocalStorage) showToast("Aviso: este navegador não permite salvar dados — eles vão se perder ao fechar.", "warning");
 
   setupRealtimeSync();
+  setupItemsRealtimeSync();
   setupPresenceSync();
 
   var myRoute = routeStates[currentProfile];
