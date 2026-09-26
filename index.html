@@ -576,6 +576,12 @@ var supabaseClient = (SUPABASE_URL.indexOf("SEU-PROJETO")===-1 && window.supabas
   : null;
 var hasSupabase = !!supabaseClient;
 
+/* identifica ESTE carregamento do app, pra ele reconhecer e ignorar o "eco"
+   das próprias escritas quando o Supabase avisa de volta que algo mudou
+   (sem isso, cada salvamento redesenha o mapa de novo por nada, e se dois
+   avisos chegam quase juntos, dá a impressão de o mapa "piscar") */
+var CLIENT_ID = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+
 var hasClaudeStorage = !!(window.storage && window.storage.get);
 var hasLocalStorage = (function(){
   try{ var k="__t"; localStorage.setItem(k,"1"); localStorage.removeItem(k); return true; }
@@ -616,7 +622,7 @@ async function safeSet(key, value){
   try{
     if(hasLocalStorage){ localStorage.setItem("rotas_"+key, JSON.stringify(value)); } // sempre grava cache local primeiro
     if(key===CENTRAL_KEY && hasSupabase){
-      var res = await supabaseClient.from("rotas_app").upsert({ id: SHARED_ROW_ID, data: value, updated_at: new Date().toISOString() });
+      var res = await supabaseClient.from("rotas_app").upsert({ id: SHARED_ROW_ID, data: value, writer: CLIENT_ID, updated_at: new Date().toISOString() });
       if(res.error) throw res.error;
       return;
     }
@@ -650,6 +656,7 @@ function setupRealtimeSync(){
   supabaseClient
     .channel("rotas_app_changes")
     .on("postgres_changes", { event:"*", schema:"public", table:"rotas_app", filter:"id=eq."+SHARED_ROW_ID }, function(payload){
+      if(payload.new && payload.new.writer===CLIENT_ID) return; // é a minha própria escrita voltando, ignora
       if(payload.new && payload.new.data) applyRemoteData(payload.new.data);
     })
     .subscribe();
@@ -670,7 +677,7 @@ async function fetchTableAsArray(table){
 async function upsertRemoteItem(table, item){
   if(!hasSupabase) return;
   try{
-    var res = await supabaseClient.from(table).upsert({ id: item.id, data: item, updated_at: new Date().toISOString() });
+    var res = await supabaseClient.from(table).upsert({ id: item.id, data: item, writer: CLIENT_ID, updated_at: new Date().toISOString() });
     if(res.error) throw res.error;
   }catch(e){ console.error("Falha ao sincronizar "+table, e); showToast("Sem conexão — essa alteração ficou só neste aparelho por enquanto.", "warning"); }
 }
@@ -694,7 +701,7 @@ async function replaceRemoteCollection(table, oldItems, newItems){
       if(delRes.error) throw delRes.error;
     }
     if(newItems.length){
-      var rows = newItems.map(function(x){ return {id:x.id, data:x, updated_at:new Date().toISOString()}; });
+      var rows = newItems.map(function(x){ return {id:x.id, data:x, writer: CLIENT_ID, updated_at:new Date().toISOString()}; });
       var upRes = await supabaseClient.from(table).upsert(rows);
       if(upRes.error) throw upRes.error;
     }
@@ -706,8 +713,12 @@ function readLocalArrayCache(key, fallback){
   catch(e){ return fallback; }
 }
 /* aplica no array local uma mudança (insert/update/delete) que chegou pelo
-   realtime de UMA das três tabelas de item, sem precisar recarregar nada */
+   realtime de UMA das três tabelas de item, sem precisar recarregar nada.
+   Ignora o "eco" da própria escrita (writer===CLIENT_ID) — sem isso, o
+   próprio aparelho que salvou receberia o aviso de volta e redesenharia
+   o mapa de novo à toa. */
 function applyItemChange(payload, getArr, setArr, rerender){
+  if(payload.eventType !== "DELETE" && payload.new && payload.new.writer===CLIENT_ID) return;
   var arr = getArr().slice();
   if(payload.eventType === "DELETE"){
     var oldId = payload.old && payload.old.id;
@@ -721,16 +732,29 @@ function applyItemChange(payload, getArr, setArr, rerender){
   setArr(arr);
   rerender();
 }
+/* agrupa várias mudanças que cheguem quase juntas (ex: import de backup do
+   outro perfil, que grava muitas linhas de uma vez) numa única redesenhada,
+   em vez de uma redesenhada por linha — evita o mapa "piscar" em sequência */
+function debounced(fn, delay){
+  var t = null;
+  return function(){
+    if(t) clearTimeout(t);
+    t = setTimeout(fn, delay);
+  };
+}
 function setupItemsRealtimeSync(){
   if(!hasSupabase) return;
+  var renderStreetsDebounced = debounced(function(){ renderStreetsOnMap(); renderListaPanel(); renderRotaChecklist(); }, 150);
+  var renderHousesDebounced = debounced(function(){ renderHousesOnMap(); renderListaPanel(); renderRotaChecklist(); }, 150);
+  var renderNeighborhoodsDebounced = debounced(function(){ renderNeighborhoodsOnMap(); populateBairroFilter(); renderListaPanel(); }, 150);
   supabaseClient.channel("rotas_streets_sync").on("postgres_changes", {event:"*", schema:"public", table:"rotas_streets"}, function(payload){
-    applyItemChange(payload, function(){return streets;}, function(v){streets=v;}, function(){ renderStreetsOnMap(); renderListaPanel(); renderRotaChecklist(); });
+    applyItemChange(payload, function(){return streets;}, function(v){streets=v;}, renderStreetsDebounced);
   }).subscribe();
   supabaseClient.channel("rotas_houses_sync").on("postgres_changes", {event:"*", schema:"public", table:"rotas_houses"}, function(payload){
-    applyItemChange(payload, function(){return houses;}, function(v){houses=v;}, function(){ renderHousesOnMap(); renderListaPanel(); renderRotaChecklist(); });
+    applyItemChange(payload, function(){return houses;}, function(v){houses=v;}, renderHousesDebounced);
   }).subscribe();
   supabaseClient.channel("rotas_neighborhoods_sync").on("postgres_changes", {event:"*", schema:"public", table:"rotas_neighborhoods"}, function(payload){
-    applyItemChange(payload, function(){return neighborhoods;}, function(v){neighborhoods=v;}, function(){ renderNeighborhoodsOnMap(); populateBairroFilter(); renderListaPanel(); });
+    applyItemChange(payload, function(){return neighborhoods;}, function(v){neighborhoods=v;}, renderNeighborhoodsDebounced);
   }).subscribe();
 }
 async function rawGetClaude(key){
