@@ -109,6 +109,8 @@
   #tabbar button svg{width:20px; height:20px; transition:transform 150ms;}
   #tabbar button.active{color:var(--accent-ink); background:var(--accent); font-weight:700; box-shadow:0 3px 10px rgba(139,92,246,0.4);}
   #tabbar button:active svg{transform:scale(0.9);}
+  #tabbar button.route-active svg{position:relative;}
+  #tabbar button.route-active::after{content:""; position:absolute; top:6px; right:calc(50% - 15px); width:7px; height:7px; border-radius:50%; background:var(--success); border:1.5px solid var(--surface); animation:pulse 1.6s infinite;}
 
   .panel{position:fixed; inset:0; z-index:20; background:var(--bg); padding:calc(var(--safe-top) + 18px) 18px calc(var(--safe-bottom) + 80px); overflow-y:auto; display:none; -webkit-overflow-scrolling:touch;}
   .panel.active{display:block;}
@@ -210,7 +212,7 @@
   .house-pin.done::after{content:"✓"; font-size:11px; font-weight:800; line-height:1;}
   .house-pin.selected{box-shadow:0 0 0 3px var(--route-halo), 0 2px 6px rgba(0,0,0,0.4);}
   .house-pin.next-stop{min-width:26px; height:26px; font-size:12px; outline:3px solid var(--accent-light); animation:pulse 1.4s infinite;}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(168,85,247,0.55);} 70%{box-shadow:0 0 0 9px rgba(168,85,247,0);} 100%{box-shadow:0 0 0 0 rgba(168,85,247,0);}}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(139,92,246,0.55);} 70%{box-shadow:0 0 0 9px rgba(139,92,246,0);} 100%{box-shadow:0 0 0 0 rgba(139,92,246,0);}}
   @keyframes sheet-in{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);}}
   .edit-menu-row{
     width:100%; display:flex; align-items:center; gap:12px; border:none; background:var(--surface-2);
@@ -1627,15 +1629,19 @@ function setTab(tab){
   document.getElementById("panel-lista").classList.toggle("active", tab==="lista");
   document.getElementById("panel-rota").classList.toggle("active", tab==="rota");
   var showMapUI = tab==="mapa";
-  document.getElementById("edit-menu-btn").style.display = showMapUI?"flex":"none";
+  var rs = ensureRouteState();
+  var execShowing = showMapUI && rs.active && !!currentStopInfo();
+  /* Modo entrega: enquanto uma parada está em andamento, a ferramenta de
+     cadastro/edição fica escondida (o entregador não precisa dela nesse
+     momento) — Localização e Norte continuam disponíveis. */
+  document.getElementById("edit-menu-btn").style.display = (showMapUI && !execShowing)?"flex":"none";
   document.getElementById("north-btn").style.display = showMapUI?"flex":"none";
   if(showMapUI && map) updateNorthButtonVisibility();
   document.getElementById("locate-btn").style.display = showMapUI?"flex":"none";
   if(tab==="mapa") updateDrawBanner(); else document.getElementById("draw-banner").classList.remove("show");
-  var rs = ensureRouteState();
   var showingResult = document.getElementById("rota-result-view").style.display!=="none";
   document.getElementById("rota-cta").style.display = (tab==="rota" && !showingResult) ? "block" : "none";
-  document.getElementById("exec-bar").classList.toggle("show", showMapUI && rs.active && !!currentStopInfo());
+  document.getElementById("exec-bar").classList.toggle("show", execShowing);
   if(tab==="rota") renderRotaChecklist();
   if(tab==="mapa") setTimeout(function(){map.invalidateSize();},50);
 }
@@ -2464,18 +2470,24 @@ function refreshExecUI(){
   var bar = document.getElementById("exec-bar");
   if(!rs.active || !info){
     bar.classList.remove("show");
+    document.querySelector('#tabbar button[data-tab="rota"]').classList.remove("route-active");
+    var curTabBtn2 = document.querySelector('#tabbar button.active');
+    if(curTabBtn2 && curTabBtn2.dataset.tab==="mapa") document.getElementById("edit-menu-btn").style.display = "flex";
     if(rs.active && !info){ showToast("Rota concluída! 🎉", "success"); addHistoryEntry(rs); rs.active=false; saveRoute(); }
     return;
   }
   bar.classList.add("show");
-  document.getElementById("exec-label").textContent = info.isEnd ? "Destino final" : "Próxima parada";
+  var totalSteps = rs.order.length + (rs.endMode!=="open" ? 1 : 0);
+  var doneSteps = rs.completed.length + (rs.endDone ? 1 : 0);
+  document.getElementById("exec-label").textContent = (info.isEnd ? "Destino final" : "Próxima parada")+" · "+(doneSteps+1)+" de "+totalSteps;
   document.getElementById("exec-title").textContent = info.stop.label;
   document.getElementById("exec-sub").textContent = info.stop.sub || "";
   document.getElementById("exec-done").textContent = info.isEnd ? "Concluir rota" : "Entregue";
-  var totalSteps = rs.order.length + (rs.endMode!=="open" ? 1 : 0);
-  var doneSteps = rs.completed.length + (rs.endDone ? 1 : 0);
   var pct = totalSteps>0 ? Math.round((doneSteps/totalSteps)*100) : 0;
   document.getElementById("exec-progress-fill").style.width = pct+"%";
+  document.querySelector('#tabbar button[data-tab="rota"]').classList.add("route-active");
+  var curTabBtn = document.querySelector('#tabbar button.active');
+  if(curTabBtn && curTabBtn.dataset.tab==="mapa") document.getElementById("edit-menu-btn").style.display = "none";
   map.setView([info.stop.lat, info.stop.lng], Math.max(map.getZoom(),17));
 }
 document.getElementById("exec-done").addEventListener("click", function(){
