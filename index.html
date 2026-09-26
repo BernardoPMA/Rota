@@ -450,6 +450,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.7/dist/leaflet-rotate.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 (function(){
 "use strict";
@@ -511,6 +512,18 @@ var LEGACY_KEYS = {
   theme:"theme-v1", baseKind:"basekind-v1"
 };
 
+/* ---- Supabase: banco compartilhado entre os dois usuários ----
+   Troque os dois valores abaixo pelos do SEU projeto Supabase
+   (Project Settings > API). Enquanto SUPABASE_URL não for trocado,
+   o app continua funcionando só localmente (localStorage), sem erro. */
+var SUPABASE_URL = "https://rjermrfgfzdewuwzboqq.supabase.co";
+var SUPABASE_ANON_KEY = "sb_publishable_n0X6p5nK2_X3YTikaRge2A_CZ4bMFJZ";
+var SHARED_ROW_ID = "principal"; // mesma linha da tabela pros dois usuários lerem/escreverem
+var supabaseClient = (SUPABASE_URL.indexOf("SEU-PROJETO")===-1 && window.supabase)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+var hasSupabase = !!supabaseClient;
+
 var hasClaudeStorage = !!(window.storage && window.storage.get);
 var hasLocalStorage = (function(){
   try{ var k="__t"; localStorage.setItem(k,"1"); localStorage.removeItem(k); return true; }
@@ -520,6 +533,16 @@ var hasLocalStorage = (function(){
 /* primitivas de baixo nível (usadas pela camada central e, se precisar, por qualquer outra coisa) */
 async function safeGet(key, fallback){
   try{
+    if(key===CENTRAL_KEY && hasSupabase){
+      var res = await supabaseClient.from("rotas_app").select("data").eq("id", SHARED_ROW_ID).maybeSingle();
+      if(res.error) throw res.error;
+      if(res.data && res.data.data){
+        if(hasLocalStorage) localStorage.setItem("rotas_"+key, JSON.stringify(res.data.data)); // cache offline
+        return res.data.data;
+      }
+      // ainda não existe registro no Supabase (primeira vez): cai pro cache local abaixo,
+      // e esse valor será enviado ao Supabase no próximo saveAppData()
+    }
     if(hasClaudeStorage){
       var r = await window.storage.get(key, false);
       return r ? JSON.parse(r.value) : fallback;
@@ -527,14 +550,55 @@ async function safeGet(key, fallback){
       var v = localStorage.getItem("rotas_"+key);
       return v!==null ? JSON.parse(v) : fallback;
     }
-  }catch(e){ console.error(e); }
+  }catch(e){
+    console.error(e);
+    if(key===CENTRAL_KEY && hasSupabase) showToast("Sem conexão com o servidor — usando dados salvos neste aparelho.", "warning");
+    if(hasLocalStorage){
+      var vv = localStorage.getItem("rotas_"+key);
+      if(vv!==null) return JSON.parse(vv);
+    }
+  }
   return fallback;
 }
 async function safeSet(key, value){
   try{
+    if(hasLocalStorage){ localStorage.setItem("rotas_"+key, JSON.stringify(value)); } // sempre grava cache local primeiro
+    if(key===CENTRAL_KEY && hasSupabase){
+      var res = await supabaseClient.from("rotas_app").upsert({ id: SHARED_ROW_ID, data: value, updated_at: new Date().toISOString() });
+      if(res.error) throw res.error;
+      return;
+    }
     if(hasClaudeStorage){ await window.storage.set(key, JSON.stringify(value), false); }
-    else if(hasLocalStorage){ localStorage.setItem("rotas_"+key, JSON.stringify(value)); }
   }catch(e){ console.error("storage set falhou", key, e); }
+}
+
+/* aplica dados que chegaram do Supabase (mudança feita pelo outro usuário)
+   sem precisar recarregar a página inteira */
+function applyRemoteData(raw){
+  var normalized = normalizeAppData(raw);
+  streets = normalized.streets;
+  houses = normalized.houses;
+  neighborhoods = normalized.neighborhoods;
+  routeState = normalized.routeState;
+  ensureRouteState();
+  routeHistory = normalized.routeHistory;
+  settings = normalized.settings;
+  baseKind = settings.baseKind;
+  if(hasLocalStorage) localStorage.setItem("rotas_"+CENTRAL_KEY, JSON.stringify(raw));
+  renderStreetsOnMap(); renderHousesOnMap(); renderNeighborhoodsOnMap(); renderEndpointMarkers();
+  populateBairroFilter(); renderListaPanel(); renderRotaChecklist();
+  refreshExecUI();
+}
+
+/* escuta em tempo real mudanças feitas pelo outro usuário na mesma linha da tabela */
+function setupRealtimeSync(){
+  if(!hasSupabase) return;
+  supabaseClient
+    .channel("rotas_app_changes")
+    .on("postgres_changes", { event:"*", schema:"public", table:"rotas_app", filter:"id=eq."+SHARED_ROW_ID }, function(payload){
+      if(payload.new && payload.new.data) applyRemoteData(payload.new.data);
+    })
+    .subscribe();
 }
 async function rawGetClaude(key){
   if(!hasClaudeStorage) return undefined;
@@ -2493,6 +2557,13 @@ function finishRouteExecution(){
   rs.completed = [];
   rs.selectedIds = [];
   rs.endDone = false;
+  /* Bandeirinha de início/fim (🚩/🏁) só existe enquanto customStart/
+     customEnd têm um ponto salvo — sem isso, era o único motivo dela
+     continuar no mapa depois da rota acabar. Uma rota nova começa do
+     zero: localização atual como início, rota aberta como fim. */
+  rs.customStart = null;
+  rs.customEnd = null;
+  rs.endMode = "open";
   saveRoute();
   routeLineLayer.clearLayers();
   document.getElementById("rota-warning").style.display = "none";
@@ -2576,6 +2647,8 @@ async function init(){
   renderRotaChecklist();
 
   if(!hasClaudeStorage && !hasLocalStorage) showToast("Aviso: este navegador não permite salvar dados — eles vão se perder ao fechar.", "warning");
+
+  setupRealtimeSync();
 
   if(routeState && routeState.active){
     setTimeout(function(){
