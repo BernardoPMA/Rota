@@ -39,7 +39,8 @@ const NEVER_CACHE_HOSTS = [
   "supabase.co",
   "supabase.in",
   "cartocdn.com",
-  "openstreetmap.org"
+  "openstreetmap.org",
+  "open-meteo.com"
 ];
 function shouldBypass(url){
   return NEVER_CACHE_HOSTS.some(function(host){ return url.indexOf(host) !== -1; });
