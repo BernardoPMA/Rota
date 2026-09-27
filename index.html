@@ -304,6 +304,18 @@
   #peer-status-detail{font-size:11.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   #weather-status{display:none; align-items:center; gap:6px; background:var(--surface-blur); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--border); border-radius:999px; padding:7px 13px; box-shadow:var(--shadow-md); font-size:12px; font-weight:700; color:var(--text);}
   #weather-status.show{display:flex;}
+  /* enquanto edita (rua, casa, bairro...) o banner de edição ocupa esse espaço — esconde os cartões pra não ficarem por cima */
+  body.editing #top-status-stack{display:none;}
+
+  /* "Lupa" de precisão: enquanto o dedo está apertado marcando um ponto
+     (casa, rua, bairro, início/fim de rota), mostra um círculo ampliado
+     acima do dedo com o ponto exato marcado no centro — porque o próprio
+     dedo tampa o lugar onde você está tocando. */
+  #magnifier{position:fixed; left:0; top:0; width:136px; height:136px; border-radius:50%; overflow:hidden; border:3px solid #fff; box-shadow:0 8px 24px rgba(0,0,0,0.55); z-index:500; pointer-events:none; transform:translate(-50%, calc(-100% - 26px)); display:none;}
+  #magnifier.show{display:block;}
+  #magnifier.below{transform:translate(-50%, 34px);}
+  #magnifier-inner{width:100%; height:100%;}
+  #magnifier-crosshair{position:absolute; left:50%; top:50%; width:13px; height:13px; margin-left:-6.5px; margin-top:-6.5px; border-radius:50%; background:#EF4444; border:2.5px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5);}
 
   .street-line.street-twoway{stroke:var(--twoway) !important;}
   .street-line.street-oneway{stroke:var(--oneway) !important;}
@@ -380,6 +392,11 @@
 </style>
 </head>
 <body>
+
+<div id="magnifier">
+  <div id="magnifier-inner"></div>
+  <div id="magnifier-crosshair"></div>
+</div>
 
 <div id="map"></div>
 
@@ -1235,9 +1252,9 @@ function sampleAlongPath(points, spacingMeters){
 /* Faixas de zoom pros rótulos: uma classe só no container do mapa, que o
    CSS usa pra redimensionar tudo de uma vez (nenhum loop por elemento). */
 function currentZoomTier(z){
-  if(z < 15) return 0;
-  if(z < 16.5) return 1;
-  if(z < 18) return 2;
+  if(z < 16.5) return 0;
+  if(z < 17.2) return 1;
+  if(z < 17.8) return 2;
   return 3;
 }
 var lastZoomTier = null;
@@ -1383,14 +1400,14 @@ function makeBaseLayer(){
     var style = isLight() ? "light_nolabels" : "dark_nolabels";
     l = L.tileLayer("https://{s}.basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}{r}.png?key="+CARTO_API_KEY, {
       tileSize:256, zoomOffset:0, detectRetina:true,
-      maxZoom:19, maxNativeZoom:19, // teto seguro e igual pras duas camadas — evita tile em branco no zoom máximo
+      maxZoom:18, maxNativeZoom:18, // teto mais conservador — 19 ainda mostrava tile em branco em algumas áreas
       subdomains:"abcd", attribution:"&copy; OpenStreetMap contributors &copy; CARTO"
     });
   } else {
     if(baseKind==="clean" && !CARTO_API_KEY) console.warn("CARTO_API_KEY vazio — usando OSM como reserva até a chave ser configurada.");
     l = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       tileSize:256, zoomOffset:0,
-      maxZoom:19, maxNativeZoom:19, // 19 é o teto real e documentado do OSM padrão
+      maxZoom:18, maxNativeZoom:18, // mesmo teto conservador da camada CARTO, por segurança
       subdomains:"abc", attribution:"&copy; OpenStreetMap contributors"
     });
   }
@@ -1428,7 +1445,7 @@ function setBaseKind(kind){
 
 function initMap(){
   map = L.map("map", {
-    zoomControl:false, attributionControl:true, maxZoom:19,
+    zoomControl:false, attributionControl:false, maxZoom:18,
     rotate:true, bearing:0, touchRotate:true, rotateControl:false
   }).setView([-23.5505,-46.6333], 16);
 
@@ -1880,22 +1897,11 @@ document.getElementById("locate-btn").addEventListener("click", function(){
 
 
 function onMapClick(e){
-  if((mode==="street" || mode==="bairro") && drawSubMode==="tap"){
-    drawingPoints.push({lat:e.latlng.lat, lng:e.latlng.lng});
-    drawUndoStack.push(1);
-    redrawDrawing(); updateDrawBanner();
-  } else if(mode==="house"){
-    var pt = {lat:e.latlng.lat, lng:e.latlng.lng};
-    placeHouseGhost(pt);
-    openHouseForm(null, pt);
-  } else if(mode==="pick"){
-    var pt = {lat:e.latlng.lat, lng:e.latlng.lng};
-    var rs = ensureRouteState();
-    if(pickTarget==="start"){ rs.customStart = pt; } else { rs.customEnd = pt; rs.endMode = "custom"; }
-    saveRoute(); pickTarget = null; setMode("view");
-    renderEndpointMarkers(); setTab("rota"); updateEndpointLabels();
-    showToast("Ponto definido.", "success");
-  }
+  // O fluxo normal (com a lupa) já coloca o ponto via pointerdown/pointerup —
+  // se este clique também colocasse, cada toque criaria DOIS pontos. Fica só
+  // como reserva pra navegador sem Pointer Events (não é o caso do iPhone).
+  if(window.PointerEvent) return;
+  if(shouldMagnify()) commitPlacement({lat:e.latlng.lat, lng:e.latlng.lng});
 }
 /* marcador temporário no lugar tocado pra cadastrar casa nova — some quando
    o formulário fecha (salvando, cancelando ou excluindo), pra sempre deixar
@@ -1915,8 +1921,10 @@ function removeHouseGhost(){ if(houseGhostMarker){ map.removeLayer(houseGhostMar
 function setDrawSubMode(sub){
   drawSubMode = sub;
   var mapEl = document.getElementById("map");
-  if(sub==="freehand"){ map.dragging.disable(); mapEl.classList.add("freehand-drawing"); }
-  else { map.dragging.enable(); mapEl.classList.remove("freehand-drawing"); }
+  if(sub==="freehand"){ map.dragging.disable(); } else { map.dragging.enable(); }
+  // touch-action:none também nos modos de marcar ponto (lupa), senão o navegador
+  // "rouba" o gesto ao arrastar o dedo pra mirar e cancela a marcação
+  mapEl.classList.toggle("freehand-drawing", sub==="freehand" || shouldMagnify());
   updateDrawBanner();
 }
 document.querySelectorAll("#draw-mode-toggle button").forEach(function(b){
@@ -1992,12 +2000,103 @@ function onFreehandPointerUp(e){
   }
   freehandPts = [];
 }
+/* ============================================================
+   LUPA DE PRECISÃO + COLOCAÇÃO DE PONTO — em vez de confiar no "click"
+   do Leaflet (que não dispara direito se o dedo escorregar um pouco,
+   coisa comum ao tentar mirar), a colocação de ponto (casa, ponto de
+   rua/bairro no modo toque, início/fim de rota) agora segue o dedo
+   desde o toque até soltar, mostrando uma lupa acima do dedo — porque
+   o próprio dedo tampa o lugar exato onde se está tocando — e só
+   confirma o ponto no momento em que solta.
+============================================================ */
+var magnifierMap = null;
+var placingActive = false;
+var placingLastLatLng = null;
+var placingWasDraggingEnabled = true;
+function shouldMagnify(){
+  if(mode==="house") return true;
+  if(mode==="pick") return true;
+  if((mode==="street"||mode==="bairro") && drawSubMode==="tap") return true;
+  return false;
+}
+function ensureMagnifierMap(){
+  if(magnifierMap) return magnifierMap;
+  magnifierMap = L.map("magnifier-inner", {
+    zoomControl:false, attributionControl:false, dragging:false, touchZoom:false,
+    doubleClickZoom:false, scrollWheelZoom:false, boxZoom:false, keyboard:false,
+    tap:false, fadeAnimation:false, zoomAnimation:false, inertia:false, maxZoom:21
+  });
+  var lyr = makeBaseLayer(); // mesma fonte de tiles do mapa principal (tema/estilo atual)
+  lyr.options.maxZoom = 21;  // tiles reais só existem até o zoom 18; acima disso o Leaflet amplia o último (maxNativeZoom)
+  lyr.addTo(magnifierMap);
+  return magnifierMap;
+}
+function showMagnifierAt(clientX, clientY){
+  var el = document.getElementById("magnifier");
+  var wasHidden = !el.classList.contains("show");
+  var bubbleX = Math.min(Math.max(clientX, 76), window.innerWidth-76); // não deixa a lupa sair pelas laterais
+  el.style.left = bubbleX+"px";
+  el.style.top = clientY+"px";
+  el.classList.toggle("below", clientY < 190); // perto do topo, a lupa aparece abaixo do dedo
+  el.classList.add("show");
+  var mm = ensureMagnifierMap();
+  if(wasHidden) mm.invalidateSize();
+  var ll = containerPointToLatLng(clientX, clientY); // o centro da lupa é SEMPRE o ponto exato sob o dedo
+  mm.setView(ll, Math.min(map.getZoom()+2, 21), {animate:false});
+}
+function hideMagnifier(){ document.getElementById("magnifier").classList.remove("show"); }
+function commitPlacement(pt){
+  if(mode==="house"){
+    placeHouseGhost(pt);
+    openHouseForm(null, pt);
+  } else if(mode==="pick"){
+    var rs = ensureRouteState();
+    if(pickTarget==="start"){ rs.customStart = pt; } else { rs.customEnd = pt; rs.endMode = "custom"; }
+    saveRoute(); pickTarget = null; setMode("view");
+    renderEndpointMarkers(); setTab("rota"); updateEndpointLabels();
+    showToast("Ponto definido.", "success");
+  } else if((mode==="street"||mode==="bairro") && drawSubMode==="tap"){
+    drawingPoints.push(pt);
+    drawUndoStack.push(1);
+    redrawDrawing(); updateDrawBanner();
+  }
+}
+function onPlacePointerDown(e){
+  if(freehandActive || !shouldMagnify()) return;
+  if(e.button!==undefined && e.button!==0) return;
+  placingActive = true;
+  placingWasDraggingEnabled = map.dragging.enabled();
+  map.dragging.disable(); // enquanto mira o ponto, arrastar o dedo ajusta a posição em vez de mover o mapa
+  placingLastLatLng = containerPointToLatLng(e.clientX, e.clientY);
+  showMagnifierAt(e.clientX, e.clientY);
+  e.preventDefault();
+}
+function onPlacePointerMove(e){
+  if(!placingActive) return;
+  e.preventDefault();
+  placingLastLatLng = containerPointToLatLng(e.clientX, e.clientY);
+  showMagnifierAt(e.clientX, e.clientY);
+}
+function onPlacePointerUp(e){
+  if(!placingActive) return;
+  placingActive = false;
+  hideMagnifier();
+  if(placingWasDraggingEnabled) map.dragging.enable();
+  var pt = placingLastLatLng;
+  placingLastLatLng = null;
+  // "pointercancel" (ex: começou um gesto de pinça) cancela a marcação em vez de confirmar um ponto sem querer
+  if(pt && e.type!=="pointercancel") commitPlacement({lat:pt.lat, lng:pt.lng});
+}
 (function(){
   var mapEl = document.getElementById("map");
   mapEl.addEventListener("pointerdown", onFreehandPointerDown);
   mapEl.addEventListener("pointermove", onFreehandPointerMove);
   window.addEventListener("pointerup", onFreehandPointerUp);
   window.addEventListener("pointercancel", onFreehandPointerUp);
+  mapEl.addEventListener("pointerdown", onPlacePointerDown);
+  mapEl.addEventListener("pointermove", onPlacePointerMove);
+  window.addEventListener("pointerup", onPlacePointerUp);
+  window.addEventListener("pointercancel", onPlacePointerUp);
 })();
 function redrawDrawing(){
   if(drawingLayer) map.removeLayer(drawingLayer);
@@ -2080,6 +2179,7 @@ function setMode(m){
   if((mode==="street"||mode==="bairro") && m!==mode) cancelDrawing();
   var wasEdit = mode==="edit", willBeEdit = m==="edit";
   mode = m;
+  document.body.classList.toggle("editing", mode!=="view");
   setDrawSubMode("tap"); // toda troca de modo começa (ou volta) em "ponto a ponto" e garante o mapa arrastável
   document.getElementById("edit-menu-btn").classList.toggle("active", mode!=="view");
   updateDrawBanner();
@@ -2352,16 +2452,22 @@ function renderStreetsOnMap(){
       var line = L.polyline(latlngs, {className:"street-line "+(s.twoWay?"street-twoway":"street-oneway")+(isNext?" next-stop":""), weight: isNext?6:4, opacity:0.9}).addTo(streetLayerGroup);
       line.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
     }
-    // repete o nome a cada ~140m de rua (em vez de só um rótulo gigante no meio),
+    // repete o nome a cada ~220m de rua (em vez de só um rótulo gigante no meio),
     // pra ficar proporcional em ruas longas e sempre visível na tela mesmo com
-    // pan; a seta (↔ mão dupla / → sentido único) fica junto do nome
-    var arrowChar = s.twoWay ? "↔" : "→";
-    var samples = sampleAlongPath(s.points, 140);
+    // pan. A seta usa "↑"/"↕" com uma rotação PRÓPRIA, calculada pelo rumo real
+    // (igual ao cone do usuário) — não pela rotação "de leitura" do texto, que
+    // pode virar 180° só pra não ficar de cabeça pra baixo. Assim a seta nunca
+    // aponta errado, mesmo quando o texto gira pra continuar legível.
+    var arrowGlyph = s.twoWay ? "↕" : "↑";
+    var samples = sampleAlongPath(s.points, 220);
     samples.forEach(function(mb){
-      var angle = textRotationFor(mb.bearing, map.getBearing());
+      var mapBearing = map.getBearing();
+      var labelAngle = textRotationFor(mb.bearing, mapBearing);
+      var trueAngle = (mb.bearing + mapBearing + 360) % 360;
+      var arrowRot = trueAngle - labelAngle; // rotação relativa: o pai já girou labelAngle, isso completa até o ângulo real
       var cls = "street-name-label "+(s.twoWay?"dir-twoway":"dir-oneway")+(isNext?" next-stop":"");
-      var html = '<div class="'+cls+'" style="transform:translate(-50%,-50%) rotate('+angle+'deg);">'+
-        '<span class="street-dir-arrow">'+arrowChar+'</span>'+escapeHtml(s.names.join(" / "))+'</div>';
+      var html = '<div class="'+cls+'" style="transform:translate(-50%,-50%) rotate('+labelAngle+'deg);">'+
+        '<span class="street-dir-arrow" style="transform:rotate('+arrowRot+'deg);">'+arrowGlyph+'</span>'+escapeHtml(s.names.join(" / "))+'</div>';
       var labelIcon = L.divIcon({className:"", html:html, iconSize:[0,0]});
       var lm = L.marker([mb.pt.lat, mb.pt.lng], {icon:labelIcon}).addTo(streetLayerGroup);
       lm._streetBearing = mb.bearing; // guardado pra realinhar no rotate sem recriar nada
@@ -2374,11 +2480,19 @@ function renderStreetsOnMap(){
    posição (o Leaflet já faz isso sozinho) nem recria nenhum marker */
 function updateStreetLabelRotations(){
   if(!streetLayerGroup) return;
+  var mapBearing = map.getBearing();
   streetLayerGroup.eachLayer(function(lm){
     if(lm._streetBearing===undefined) return; // é a linha SVG do modo edição, não o rótulo
     var el = lm.getElement();
     var div = el && el.firstChild;
-    if(div) div.style.transform = "translate(-50%,-50%) rotate("+textRotationFor(lm._streetBearing, map.getBearing())+"deg)";
+    if(!div) return;
+    var labelAngle = textRotationFor(lm._streetBearing, mapBearing);
+    div.style.transform = "translate(-50%,-50%) rotate("+labelAngle+"deg)";
+    var arrowEl = div.querySelector(".street-dir-arrow");
+    if(arrowEl){
+      var trueAngle = (lm._streetBearing + mapBearing + 360) % 360;
+      arrowEl.style.transform = "rotate("+(trueAngle-labelAngle)+"deg)";
+    }
   });
 }
 function renderHousesOnMap(){
