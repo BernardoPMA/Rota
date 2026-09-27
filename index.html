@@ -314,11 +314,30 @@
      computeRouteGeometry) só pra dar sensação de "fluxo" à rota ativa. */
   .route-line-flow{stroke:rgba(255,255,255,0.85) !important; stroke-linecap:round !important; fill:none !important; stroke-dasharray:1 14; animation:route-flow 900ms linear infinite;}
   @keyframes route-flow{to{stroke-dashoffset:-15;}}
-  .drawing-line{stroke:var(--accent) !important;}
+  .drawing-line{stroke:var(--accent) !important; stroke-width:4.5px !important; stroke-linecap:round !important; stroke-linejoin:round !important;}
   /* Bairro: só contorno, nunca preenchimento — a cor vem de n.color (por
      bairro) quando definida; bairros antigos sem cor salva caem na variável
      --bairro padrão do tema, sem precisar migrar nenhum dado. */
   .bairro-poly{fill:none !important; stroke:var(--bairro);}
+  /* classe própria (não a .bairro-poly usada pelos bairros já salvos) pro
+     polígono ENQUANTO está sendo desenhado — pode ter um preenchimento leve
+     pra ficar mais fácil de enxergar a área sem afetar os bairros prontos */
+  .bairro-poly-drawing{fill:rgba(139,92,246,0.12) !important; stroke:var(--accent) !important;}
+  .bairro-poly-casing{fill:none !important; stroke:rgba(0,0,0,0.38) !important; stroke-width:6.5px !important;}
+  .bairro-close-hint{stroke:var(--text-muted) !important; fill:none !important; opacity:0.6;}
+
+  /* pontinhos numerados que marcam cada ponto colocado (toque ou arrasto) */
+  .draw-point-marker{width:24px; height:24px; border-radius:50%; background:var(--accent); border:2.5px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff;}
+  .draw-point-marker.first{background:#22C55E;}
+  .house-ghost-pin{font-size:30px; line-height:1; filter:drop-shadow(0 3px 5px rgba(0,0,0,0.5)); animation:house-ghost-drop 260ms ease-out;}
+  @keyframes house-ghost-drop{from{transform:translateY(-14px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+
+  /* alterna entre "ponto a ponto" e "arrastar" dentro do banner de desenho */
+  #draw-mode-toggle{display:none; gap:6px; background:var(--surface-2); border-radius:999px; padding:3px; margin-bottom:10px;}
+  #draw-mode-toggle button{flex:1; border:none; background:transparent; border-radius:999px; padding:9px 8px; font-size:12.5px; font-weight:700; color:var(--text-muted);}
+  #draw-mode-toggle button.active{background:var(--accent); color:var(--accent-ink);}
+  /* enquanto arrastando pra desenhar, ninguém quer que o dedo também role/dê zoom na página */
+  #map.freehand-drawing{touch-action:none;}
 
   /* Toast — hierarquia visual por tipo (sucesso/alerta/erro), mantendo o
      mesmo elemento único e a mesma função showToast já existente; o tipo é
@@ -363,6 +382,10 @@
   <div class="draw-head">
     <p id="draw-banner-text"></p>
     <button id="draw-banner-close">✕</button>
+  </div>
+  <div id="draw-mode-toggle">
+    <button type="button" data-draw-mode="tap">Ponto a ponto</button>
+    <button type="button" data-draw-mode="freehand">Arrastar (curvas)</button>
   </div>
   <div class="row" id="draw-banner-actions"></div>
 </div>
@@ -518,7 +541,15 @@ var mode = "view"; // view | edit | bairro | street | house | pick
 var pickTarget = null;
 var drawingPoints = [];
 var drawingLayer = null;
+var drawingLayerCasing = null;
+var drawingCloseHint = null;
 var drawingMarkers = [];
+var drawUndoStack = []; // quantos pontos remover de uma vez ao "Desfazer" (1 = toque; vários = um trecho arrastado)
+var drawSubMode = "tap"; // "tap" (ponto a ponto) | "freehand" (arrastar, melhor pra curvas)
+var freehandActive = false;
+var freehandPts = []; // pontos em pixel da tela durante o arrasto em andamento
+var freehandPreviewLayer = null;
+var houseGhostMarker = null; // marcador temporário no lugar tocado, enquanto o formulário de casa está aberto
 var selectionMode = "house"; // house | street
 var bairroFilterId = "";
 
@@ -1256,6 +1287,7 @@ function openModal(html){
 function closeModal(){
   document.getElementById("modal-overlay").classList.remove("show");
   document.getElementById("modal-content").innerHTML = "";
+  removeHouseGhost();
 }
 document.getElementById("modal-overlay").addEventListener("click", function(e){ if(e.target.id==="modal-overlay") closeModal(); });
 
@@ -1793,11 +1825,14 @@ document.getElementById("north-btn").addEventListener("click", function(){
 
 
 function onMapClick(e){
-  if(mode==="street" || mode==="bairro"){
+  if((mode==="street" || mode==="bairro") && drawSubMode==="tap"){
     drawingPoints.push({lat:e.latlng.lat, lng:e.latlng.lng});
+    drawUndoStack.push(1);
     redrawDrawing(); updateDrawBanner();
   } else if(mode==="house"){
-    openHouseForm(null, {lat:e.latlng.lat, lng:e.latlng.lng});
+    var pt = {lat:e.latlng.lat, lng:e.latlng.lng};
+    placeHouseGhost(pt);
+    openHouseForm(null, pt);
   } else if(mode==="pick"){
     var pt = {lat:e.latlng.lat, lng:e.latlng.lng};
     var rs = ensureRouteState();
@@ -1807,19 +1842,133 @@ function onMapClick(e){
     showToast("Ponto definido.", "success");
   }
 }
+/* marcador temporário no lugar tocado pra cadastrar casa nova — some quando
+   o formulário fecha (salvando, cancelando ou excluindo), pra sempre deixar
+   claro qual ponto exato vai virar a casa */
+function placeHouseGhost(pt){
+  removeHouseGhost();
+  var icon = L.divIcon({className:"", html:'<div class="house-ghost-pin">📍</div>', iconSize:[30,30], iconAnchor:[15,28]});
+  houseGhostMarker = L.marker([pt.lat,pt.lng], {icon:icon, interactive:false}).addTo(map);
+}
+function removeHouseGhost(){ if(houseGhostMarker){ map.removeLayer(houseGhostMarker); houseGhostMarker=null; } }
+/* ============================================================
+   MODO "ARRASTAR" — pra curvas, em vez de marcar ponto por ponto,
+   arrasta o dedo seguindo a rua/contorno e o app amostra pontos
+   sozinho ao longo do caminho, simplificando no final (Douglas-Peucker)
+   pra não sobrecarregar de pontos desnecessários.
+============================================================ */
+function setDrawSubMode(sub){
+  drawSubMode = sub;
+  var mapEl = document.getElementById("map");
+  if(sub==="freehand"){ map.dragging.disable(); mapEl.classList.add("freehand-drawing"); }
+  else { map.dragging.enable(); mapEl.classList.remove("freehand-drawing"); }
+  updateDrawBanner();
+}
+document.querySelectorAll("#draw-mode-toggle button").forEach(function(b){
+  b.addEventListener("click", function(){ setDrawSubMode(b.dataset.drawMode); });
+});
+function containerPointToLatLng(clientX, clientY){
+  var rect = map.getContainer().getBoundingClientRect();
+  return map.containerPointToLatLng([clientX-rect.left, clientY-rect.top]);
+}
+/* Douglas-Peucker em espaço de tela (pixels): reduz uma trilha de arrasto
+   (que pode ter dezenas de pontos por segundo) pra só os pontos que realmente
+   definem a curva, dentro de uma tolerância de alguns pixels. */
+function simplifyPixelPoints(points, tolerancePx){
+  if(points.length<3) return points.slice();
+  function sqSegDist(p, a, b){
+    var x=a.x, y=a.y, dx=b.x-x, dy=b.y-y;
+    if(dx!==0||dy!==0){
+      var t=((p.x-x)*dx+(p.y-y)*dy)/(dx*dx+dy*dy);
+      if(t>1){ x=b.x; y=b.y; } else if(t>0){ x+=dx*t; y+=dy*t; }
+    }
+    dx=p.x-x; dy=p.y-y;
+    return dx*dx+dy*dy;
+  }
+  function step(pts, first, last, sqTol, result){
+    var maxSq=sqTol, index=-1;
+    for(var i=first+1;i<last;i++){
+      var sq=sqSegDist(pts[i], pts[first], pts[last]);
+      if(sq>maxSq){ index=i; maxSq=sq; }
+    }
+    if(index!==-1){
+      if(index-first>1) step(pts, first, index, sqTol, result);
+      result.push(pts[index]);
+      if(last-index>1) step(pts, index, last, sqTol, result);
+    }
+  }
+  var last = points.length-1;
+  var result = [points[0]];
+  step(points, 0, last, tolerancePx*tolerancePx, result);
+  result.push(points[last]);
+  return result;
+}
+function onFreehandPointerDown(e){
+  if(!((mode==="street"||mode==="bairro") && drawSubMode==="freehand")) return;
+  if(e.button!==undefined && e.button!==0) return; // só o dedo/botão principal
+  freehandActive = true;
+  freehandPts = [{x:e.clientX, y:e.clientY}];
+  e.preventDefault();
+}
+function onFreehandPointerMove(e){
+  if(!freehandActive) return;
+  e.preventDefault();
+  var last = freehandPts[freehandPts.length-1];
+  var dx = e.clientX-last.x, dy = e.clientY-last.y;
+  if((dx*dx+dy*dy) < 36) return; // só guarda um novo ponto a cada ~6px arrastados
+  freehandPts.push({x:e.clientX, y:e.clientY});
+  var latlngs = drawingPoints.map(function(p){return [p.lat,p.lng];})
+    .concat(freehandPts.map(function(pt){ var ll=containerPointToLatLng(pt.x,pt.y); return [ll.lat,ll.lng]; }));
+  if(freehandPreviewLayer) map.removeLayer(freehandPreviewLayer);
+  freehandPreviewLayer = L.polyline(latlngs, {className:"drawing-line", weight:4}).addTo(map);
+}
+function onFreehandPointerUp(e){
+  if(!freehandActive) return;
+  freehandActive = false;
+  if(freehandPreviewLayer){ map.removeLayer(freehandPreviewLayer); freehandPreviewLayer=null; }
+  if(freehandPts.length>=2){
+    var simplified = simplifyPixelPoints(freehandPts, 4);
+    simplified.forEach(function(pt){
+      var ll = containerPointToLatLng(pt.x, pt.y);
+      drawingPoints.push({lat:ll.lat, lng:ll.lng});
+    });
+    drawUndoStack.push(simplified.length); // "Desfazer" remove o trecho inteiro de uma vez
+    redrawDrawing(); updateDrawBanner();
+  }
+  freehandPts = [];
+}
+(function(){
+  var mapEl = document.getElementById("map");
+  mapEl.addEventListener("pointerdown", onFreehandPointerDown);
+  mapEl.addEventListener("pointermove", onFreehandPointerMove);
+  window.addEventListener("pointerup", onFreehandPointerUp);
+  window.addEventListener("pointercancel", onFreehandPointerUp);
+})();
 function redrawDrawing(){
   if(drawingLayer) map.removeLayer(drawingLayer);
+  if(drawingLayerCasing) map.removeLayer(drawingLayerCasing);
+  if(drawingCloseHint) map.removeLayer(drawingCloseHint);
   drawingMarkers.forEach(function(m){map.removeLayer(m);});
-  drawingMarkers=[];
+  drawingMarkers=[]; drawingLayer=null; drawingLayerCasing=null; drawingCloseHint=null;
   if(drawingPoints.length===0) return;
   var latlngs = drawingPoints.map(function(p){return [p.lat,p.lng];});
-  if(mode==="bairro" && drawingPoints.length>=3){
-    drawingLayer = L.polygon(latlngs, {className:"bairro-poly", weight:3, dashArray:"6,6"}).addTo(map);
-  } else {
-    drawingLayer = L.polyline(latlngs, {className:"drawing-line", weight:4, dashArray:"6,6"}).addTo(map);
+  if(mode==="bairro"){
+    if(drawingPoints.length>=2){
+      drawingLayerCasing = L.polyline(latlngs, {className:"bairro-poly-casing", weight:6.5}).addTo(map);
+      drawingLayer = L.polygon(latlngs, {className:"bairro-poly-drawing", weight:3, dashArray:"7,7"}).addTo(map);
+    }
+    if(drawingPoints.length>=3){
+      // linha fantasma de referência mostrando onde o contorno vai fechar
+      drawingCloseHint = L.polyline([latlngs[latlngs.length-1], latlngs[0]], {className:"bairro-close-hint", weight:2, dashArray:"2,9"}).addTo(map);
+    }
+  } else if(drawingPoints.length>=2){
+    drawingLayerCasing = L.polyline(latlngs, {weight:7.5, color:"#000", opacity:0.35}).addTo(map);
+    drawingLayer = L.polyline(latlngs, {className:"drawing-line", weight:4.5}).addTo(map);
   }
-  drawingPoints.forEach(function(p){
-    var m = L.circleMarker([p.lat,p.lng],{radius:5, color:"#fff", weight:2, fillColor:"#A855F7", fillOpacity:1}).addTo(map);
+  drawingPoints.forEach(function(p, i){
+    var html = '<div class="draw-point-marker'+(i===0?" first":"")+'">'+(i+1)+'</div>';
+    var icon = L.divIcon({className:"", html:html, iconSize:[24,24], iconAnchor:[12,12]});
+    var m = L.marker([p.lat,p.lng], {icon:icon, interactive:false}).addTo(map);
     drawingMarkers.push(m);
   });
 }
@@ -1876,6 +2025,7 @@ function setMode(m){
   if((mode==="street"||mode==="bairro") && m!==mode) cancelDrawing();
   var wasEdit = mode==="edit", willBeEdit = m==="edit";
   mode = m;
+  setDrawSubMode("tap"); // toda troca de modo começa (ou volta) em "ponto a ponto" e garante o mapa arrastável
   document.getElementById("edit-menu-btn").classList.toggle("active", mode!=="view");
   updateDrawBanner();
   if(wasEdit!==willBeEdit && streetLayerGroup) renderStreetsOnMap(); // mostra/esconde a linha de geometria
@@ -1884,18 +2034,34 @@ function updateDrawBanner(){
   var banner = document.getElementById("draw-banner");
   var text = document.getElementById("draw-banner-text");
   var actions = document.getElementById("draw-banner-actions");
+  var toggle = document.getElementById("draw-mode-toggle");
+  var showToggle = (mode==="street" || mode==="bairro");
+  toggle.style.display = showToggle ? "flex" : "none";
+  if(showToggle){
+    toggle.querySelectorAll("button").forEach(function(b){ b.classList.toggle("active", b.dataset.drawMode===drawSubMode); });
+  }
+  var undoLabel = (drawUndoStack[drawUndoStack.length-1]||1) > 1 ? "Desfazer trecho" : "Desfazer ponto";
+  function undoLastDraw(){ var n = drawUndoStack.pop()||1; drawingPoints.splice(-n, n); redrawDrawing(); updateDrawBanner(); }
   if(mode==="street"){
     banner.classList.add("show");
-    text.textContent = drawingPoints.length<2 ? "Toque no mapa para marcar os pontos da rua, na ordem em que ela segue." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    if(drawSubMode==="freehand"){
+      text.textContent = drawingPoints.length===0 ? "Arraste o dedo sobre a rua, seguindo as curvas." : drawingPoints.length+" pontos marcados. Arraste pra continuar ou finalize.";
+    } else {
+      text.textContent = drawingPoints.length<2 ? "Toque no mapa para marcar os pontos da rua, na ordem em que ela segue." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    }
     actions.innerHTML="";
-    if(drawingPoints.length>0) actions.appendChild(makeBtn("Desfazer ponto","btn-ghost",function(){ drawingPoints.pop(); redrawDrawing(); updateDrawBanner(); }));
+    if(drawingPoints.length>0) actions.appendChild(makeBtn(undoLabel,"btn-ghost",undoLastDraw));
     if(drawingPoints.length>=2) actions.appendChild(makeBtn("Concluir rua","btn-primary",finishStreetDrawing));
     if(drawingPoints.length>0) actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
   } else if(mode==="bairro"){
     banner.classList.add("show");
-    text.textContent = drawingPoints.length<3 ? "Toque no mapa para marcar o contorno do bairro (mín. 3 pontos)." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    if(drawSubMode==="freehand"){
+      text.textContent = drawingPoints.length<3 ? "Arraste o dedo contornando o bairro." : drawingPoints.length+" pontos marcados. Arraste pra continuar ou finalize.";
+    } else {
+      text.textContent = drawingPoints.length<3 ? "Toque no mapa para marcar o contorno do bairro (mín. 3 pontos)." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+    }
     actions.innerHTML="";
-    if(drawingPoints.length>0) actions.appendChild(makeBtn("Desfazer ponto","btn-ghost",function(){ drawingPoints.pop(); redrawDrawing(); updateDrawBanner(); }));
+    if(drawingPoints.length>0) actions.appendChild(makeBtn(undoLabel,"btn-ghost",undoLastDraw));
     if(drawingPoints.length>=3) actions.appendChild(makeBtn("Concluir bairro","btn-primary",finishNeighborhoodDrawing));
     if(drawingPoints.length>0) actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
   } else if(mode==="house"){
@@ -1912,7 +2078,7 @@ function updateDrawBanner(){
   }
 }
 function makeBtn(label,cls,fn){ var b=document.createElement("button"); b.textContent=label; b.className=cls; b.addEventListener("click",fn); return b; }
-function cancelDrawing(){ drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+function cancelDrawing(){ drawingPoints=[]; drawUndoStack=[]; redrawDrawing(); updateDrawBanner(); }
 
 /* ============================================================
    FORMULÁRIO DE RUA
