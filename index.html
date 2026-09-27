@@ -295,6 +295,14 @@
   .peer-loc-dot{position:absolute; left:50%; top:50%; width:16px; height:16px; margin-left:-8px; margin-top:-8px; border-radius:50%; background:#EF4444; border:2.5px solid #fff; box-shadow:0 0 0 4px rgba(239,68,68,0.22), 0 2px 6px rgba(0,0,0,0.35);}
   .peer-loc-label{position:absolute; left:50%; top:-4px; transform:translate(-50%,-100%); background:var(--surface-blur); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid var(--border); border-radius:8px; padding:2px 7px; font-size:11px; font-weight:700; white-space:nowrap; color:var(--text); box-shadow:var(--shadow-sm);}
 
+  #peer-status{position:fixed; left:12px; top:calc(var(--safe-top) + 12px); z-index:16; display:none; align-items:center; gap:9px; background:var(--surface-blur); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid var(--border); border-radius:999px; padding:9px 14px 9px 11px; box-shadow:var(--shadow-md); max-width:80vw;}
+  #peer-status.show{display:flex;}
+  #peer-status .peer-status-dot{width:9px; height:9px; border-radius:50%; background:#EF4444; flex-shrink:0; box-shadow:0 0 0 3px rgba(239,68,68,0.22);}
+  #peer-status.stale .peer-status-dot{background:var(--text-muted); box-shadow:none;}
+  .peer-status-text{display:flex; flex-direction:column; line-height:1.28; overflow:hidden;}
+  #peer-status-name{font-size:12px; font-weight:700; color:var(--text);}
+  #peer-status-detail{font-size:11.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+
   .street-line.street-twoway{stroke:var(--twoway) !important;}
   .street-line.street-oneway{stroke:var(--oneway) !important;}
   .street-line.next-stop{stroke:var(--accent) !important; stroke-width:6 !important;}
@@ -376,6 +384,14 @@
 <div id="net-banner">
   <p id="net-banner-text">As imagens do mapa não carregaram. Isso costuma acontecer quando o arquivo é aberto numa pré-visualização sem internet liberada, em vez do Safari.</p>
   <button id="net-banner-close">Entendi</button>
+</div>
+
+<div id="peer-status">
+  <div class="peer-status-dot"></div>
+  <div class="peer-status-text">
+    <span id="peer-status-name">—</span>
+    <span id="peer-status-detail">—</span>
+  </div>
 </div>
 
 <div id="exec-bar">
@@ -735,6 +751,8 @@ function applyRemoteData(raw){
   baseKind = settings.baseKind;
   if(hasLocalStorage) localStorage.setItem("rotas_"+CENTRAL_KEY, JSON.stringify(raw));
   applyTheme(settings.theme, {persist:false});
+  checkPeerRouteTransition();
+  updatePeerStatusUI();
   renderRotaChecklist();
   refreshExecUI();
 }
@@ -1475,8 +1493,10 @@ function animateBearingTo(target, duration){
 }
 
 function placeUserMarker(ll){
+  myLastKnownLatLng = ll;
   if(userMarker){
     userMarker.setLatLng(ll); // nunca recria o ícone, só reposiciona
+    updatePeerStatusUI();
     return;
   }
   var html = '<div class="user-loc-wrap">'+
@@ -1485,18 +1505,96 @@ function placeUserMarker(ll){
     '<div class="user-loc-dot"></div></div>';
   var icon = L.divIcon({className:"", html:html, iconSize:[52,52], iconAnchor:[26,26]});
   userMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map);
+  updatePeerStatusUI();
 }
 
 /* ============================================================
    PRESENÇA — mostra o "bonequinho" do outro perfil no mapa (vermelho),
    em tempo real, via Supabase. Minha própria posição é enviada com
    throttle (não a cada tique de GPS) pra não sobrecarregar o banco.
+
+   Junto com isso, o cartão no topo do mapa mostra o status do outro
+   perfil: enquanto ele está em rota, tempo decorrido + entregues +
+   restantes + distância até ele; quando ele termina, some tudo e
+   fica só a distância (se soubermos a posição dos dois).
 ============================================================ */
 var lastPresenceSentAt = 0;
 var PRESENCE_MIN_INTERVAL_MS = 6000;
 var PRESENCE_STALE_MS = 120000; // sem atualização há 2min -> mostra "desconectado" (marcador esmaecido)
+var myLastKnownLatLng = null;
+var peerLastKnownLatLng = null;
+var lastPeerActiveState = null; // null = ainda não sabemos (evita notificar sobre um estado que já existia antes de abrir o app)
+
+function haversineMeters(a, b){
+  var R = 6371000;
+  var dLat = (b[0]-a[0]) * Math.PI/180;
+  var dLng = (b[1]-a[1]) * Math.PI/180;
+  var lat1 = a[0] * Math.PI/180, lat2 = b[0] * Math.PI/180;
+  var h = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function formatDistance(m){
+  if(m < 1000) return Math.round(m)+" m";
+  return (m/1000).toFixed(1).replace(".",",")+" km";
+}
+function formatElapsed(ms){
+  var min = Math.max(0, Math.floor(ms/60000));
+  if(min < 60) return min+" min em rota";
+  var h = Math.floor(min/60), rem = min%60;
+  return h+"h"+(rem ? " "+rem+"min" : "")+" em rota";
+}
+/* pede permissão de notificação uma vez (o toast já avisa dentro do app;
+   isso aqui é só o "extra" de aparecer como notificação do sistema quando
+   o app está aberto mas em segundo plano — sem servidor de push, só
+   funciona enquanto o app continua rodando, não com ele fechado) */
+function ensureNotificationPermission(){
+  if(!("Notification" in window)) return;
+  if(Notification.permission==="default") Notification.requestPermission();
+}
+function notifyPeerEvent(text){
+  showToast(text, "success");
+  try{
+    if("Notification" in window && Notification.permission==="granted" && document.hidden){
+      new Notification("Rotas", { body: text, icon: "icon-192.png" });
+    }
+  }catch(e){ /* alguns navegadores recusam notificação fora de contexto seguro; ignora */ }
+}
+/* compara o estado atual da rota do outro perfil com o que sabíamos antes,
+   e notifica só nas transições (começou agora / terminou agora) */
+function checkPeerRouteTransition(){
+  var otherRs = routeStates[otherProfile()];
+  var isActive = !!(otherRs && otherRs.active);
+  if(lastPeerActiveState===null){ lastPeerActiveState = isActive; return; }
+  if(isActive && !lastPeerActiveState) notifyPeerEvent(otherProfile()+" iniciou uma rota.");
+  else if(!isActive && lastPeerActiveState) notifyPeerEvent(otherProfile()+" terminou a rota. 🎉");
+  lastPeerActiveState = isActive;
+}
+/* monta o texto do cartão: nome + (se ele estiver em rota) tempo/entregues/
+   restantes + (se soubermos onde os dois estão) distância entre vocês */
+function updatePeerStatusUI(){
+  var el = document.getElementById("peer-status");
+  if(!el || !hasSupabase) return;
+  var otherRs = routeStates[otherProfile()];
+  var parts = [];
+  if(otherRs && otherRs.active){
+    if(otherRs.startedAt) parts.push(formatElapsed(Date.now()-otherRs.startedAt));
+    var totalSteps = (otherRs.order||[]).length + (otherRs.endMode!=="open" ? 1 : 0);
+    var doneSteps = (otherRs.completed||[]).length + (otherRs.endDone ? 1 : 0);
+    parts.push(doneSteps+" entregues");
+    parts.push(Math.max(totalSteps-doneSteps,0)+" restantes");
+  }
+  if(myLastKnownLatLng && peerLastKnownLatLng){
+    parts.push(formatDistance(haversineMeters(myLastKnownLatLng, peerLastKnownLatLng))+" de você");
+  }
+  if(parts.length===0){ el.classList.remove("show"); return; }
+  document.getElementById("peer-status-name").textContent = otherProfile();
+  document.getElementById("peer-status-detail").textContent = parts.join(" · ");
+  el.classList.add("show");
+}
+setInterval(updatePeerStatusUI, 15000); // mantém o "X min em rota" contando mesmo sem eventos novos
 
 function placePeerMarker(ll, name){
+  peerLastKnownLatLng = ll;
   if(peerMarker){
     peerMarker.setLatLng(ll);
   } else {
@@ -1508,16 +1606,19 @@ function placePeerMarker(ll, name){
     peerMarker = L.marker(ll,{icon:icon, interactive:false}).addTo(map);
   }
   markPeerFresh();
+  updatePeerStatusUI();
 }
 function markPeerFresh(){
   var el = peerMarker && peerMarker.getElement();
   var wrap = el && el.querySelector(".peer-loc-wrap");
   if(wrap) wrap.classList.remove("stale");
+  document.getElementById("peer-status").classList.remove("stale");
   if(peerStaleTimer) clearTimeout(peerStaleTimer);
   peerStaleTimer = setTimeout(function(){
     var el2 = peerMarker && peerMarker.getElement();
     var wrap2 = el2 && el2.querySelector(".peer-loc-wrap");
     if(wrap2) wrap2.classList.add("stale");
+    document.getElementById("peer-status").classList.add("stale");
   }, PRESENCE_STALE_MS);
 }
 function sendMyPresence(ll){
@@ -1531,6 +1632,9 @@ function sendMyPresence(ll){
 }
 function setupPresenceSync(){
   if(!hasSupabase) return;
+  ensureNotificationPermission();
+  checkPeerRouteTransition(); // registra o estado atual sem notificar (é a leitura inicial)
+  updatePeerStatusUI();
   // pega a última posição conhecida do outro perfil assim que o app abre
   supabaseClient.from("rotas_presence").select("*").eq("profile", otherProfile()).maybeSingle()
     .then(function(res){
@@ -1541,6 +1645,7 @@ function setupPresenceSync(){
           var el = peerMarker.getElement();
           var wrap = el && el.querySelector(".peer-loc-wrap");
           if(wrap) wrap.classList.add("stale");
+          document.getElementById("peer-status").classList.add("stale");
         }
       }
     });
@@ -2397,6 +2502,7 @@ function ensureRouteState(){
   if(rsObj.customEnd===undefined) rsObj.customEnd=null;
   if(rsObj.completed===undefined) rsObj.completed=[];
   if(rsObj.order===undefined) rsObj.order=[];
+  if(rsObj.startedAt===undefined) rsObj.startedAt=null;
   return rsObj;
 }
 function updateEndpointLabels(){
@@ -2940,7 +3046,7 @@ function drawRouteLine(order, rs){
 /* ============================================================
    ROTA — execução (barra dinâmica, sem modal)
 ============================================================ */
-function startRouteExecution(){ var rs=ensureRouteState(); rs.active=true; saveRoute(); setTab("mapa"); refreshExecUI(); }
+function startRouteExecution(){ var rs=ensureRouteState(); rs.active=true; rs.startedAt=Date.now(); saveRoute(); setTab("mapa"); refreshExecUI(); }
 function currentStopInfo(){
   var rs = ensureRouteState();
   var remaining = rs.order.filter(function(k){return !rs.completed.includes(k);});
@@ -2972,6 +3078,7 @@ function finishRouteExecution(){
   rs.customStart = null;
   rs.customEnd = null;
   rs.endMode = "open";
+  rs.startedAt = null;
   saveRoute();
   routeLineLayer.clearLayers();
   document.getElementById("rota-warning").style.display = "none";
