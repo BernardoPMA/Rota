@@ -23,6 +23,7 @@
     --twoway:#67E8F9; --oneway:#FB7185; --bairro:#FBBF24;
     --success:#34D399; --danger:#FB7185; --warning:#FBBF24;
     --label-bg:rgba(28,33,42,0.82); --label-text:#F5F6F7;
+    --street-label-color:#D6DAE3; --street-label-halo:rgba(14,16,21,0.95); --praca:#4ADE80;
     --surface-blur:rgba(26,30,38,0.82);
     --shadow-sm:0 2px 10px rgba(0,0,0,0.28); --shadow-md:0 8px 22px rgba(0,0,0,0.34);
     --radius:14px; --radius-sm:10px;
@@ -37,6 +38,7 @@
     --twoway:#0E7490; --oneway:#DC2626; --bairro:#B45309;
     --success:#059669; --danger:#DC2626; --warning:#B45309;
     --label-bg:rgba(255,255,255,0.88); --label-text:#12141A;
+    --street-label-color:#3A4150; --street-label-halo:rgba(255,255,255,0.96); --praca:#15803D;
     --surface-blur:rgba(255,255,255,0.86);
     --shadow-sm:0 2px 8px rgba(20,23,28,0.08); --shadow-md:0 8px 20px rgba(20,23,28,0.12);
   }
@@ -224,46 +226,43 @@
      único estado confiável que já existia nos dados pra isso (não existe um
      campo separado de "concluída"; a própria presença do rótulo já significa
      que a rua está cadastrada). */
+  /* Rótulos "limpos" (estilo Apple/Google Maps): só texto com um contorno
+     (halo) na cor do fundo, sem caixa. Tamanho e visibilidade são decididos
+     no JS pra caber DENTRO do traçado da rua e não sobrepor outros nomes. */
   .street-name-label{
-    display:inline-block; width:max-content; max-width:150px; white-space:nowrap;
-    overflow:hidden; text-overflow:ellipsis; font-weight:600;
-    color:var(--label-text); background:var(--label-bg);
-    backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px);
-    border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,0.22);
-    border-bottom:1.5px solid transparent;
-    letter-spacing:0.01em;
-    transition:font-size 120ms, padding 120ms;
+    display:inline-block; width:max-content; white-space:nowrap; font-weight:600;
+    color:var(--street-label-color); letter-spacing:0.02em; line-height:1.2;
+    text-shadow:0 0 2px var(--street-label-halo), 0 0 2px var(--street-label-halo), 0 0 4px var(--street-label-halo), 0 0 4px var(--street-label-halo), 0 0 7px var(--street-label-halo);
   }
-  .street-name-label.dir-twoway{border-bottom-color:var(--twoway);}
-  .street-name-label.dir-oneway{border-bottom-color:var(--oneway);}
-  .street-name-label.next-stop{outline:2px solid var(--accent);}
-  .street-dir-arrow{margin-right:3px; font-weight:800; display:inline-block;}
+  .street-name-label.next-stop{color:var(--accent-light); font-weight:700;}
+  .street-dir-arrow{display:inline-block; margin-right:3px; font-weight:800; font-size:0.95em; opacity:0.95;}
   .street-name-label.dir-twoway .street-dir-arrow{color:var(--twoway);}
   .street-name-label.dir-oneway .street-dir-arrow{color:var(--oneway);}
 
-  .bairro-name-label{
-    display:inline-block; width:max-content; white-space:nowrap; font-weight:700;
-    color:var(--label-text); background:var(--label-bg);
-    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
-    border-radius:999px; box-shadow:0 1px 3px rgba(0,0,0,0.3);
-    transition:font-size 120ms, padding 120ms;
+  .bairro-name-label, .praca-name-label{
+    display:inline-block; width:max-content; white-space:nowrap; font-weight:800;
+    color:var(--label-text); text-transform:uppercase; letter-spacing:0.14em;
+    text-shadow:0 0 2px var(--street-label-halo), 0 0 2px var(--street-label-halo), 0 0 5px var(--street-label-halo), 0 0 8px var(--street-label-halo);
   }
+  .praca-name-label{color:var(--praca); text-transform:none; letter-spacing:0.04em; font-weight:700;}
 
   /* Faixas de zoom: uma única classe no container do mapa controla o tamanho
      de todos os rótulos de uma vez via CSS — não precisa tocar em cada
      elemento a cada frame. */
-  #map.zoom-tier-0 .street-name-label{display:none;}
-  #map.zoom-tier-1 .street-name-label{font-size:9.5px; padding:2px 7px;}
-  #map.zoom-tier-2 .street-name-label{font-size:11px; padding:3px 8px;}
-  #map.zoom-tier-3 .street-name-label{font-size:12.5px; padding:3px 9px;}
+  /* (rótulos de rua não usam mais faixas de CSS: tamanho/visibilidade vêm do JS, em renderStreetsOnMap) */
   #map.zoom-tier-0 .house-pin{min-width:16px; height:16px; font-size:7.5px; border-width:1.5px;}
   #map.zoom-tier-1 .house-pin{min-width:19px; height:19px; font-size:9px;}
   #map.zoom-tier-2 .house-pin{min-width:22px; height:22px; font-size:10.5px;}
   #map.zoom-tier-3 .house-pin{min-width:25px; height:25px; font-size:11.5px;}
-  #map.zoom-tier-0 .bairro-name-label{display:none;}
-  #map.zoom-tier-1 .bairro-name-label{font-size:9px; padding:2px 7px;}
-  #map.zoom-tier-2 .bairro-name-label{font-size:10.5px; padding:2px 8px;}
-  #map.zoom-tier-3 .bairro-name-label{font-size:12px; padding:3px 9px;}
+  /* nome de bairro fica visível até de longe (é o rótulo mais útil no zoom aberto); praça, por ser pequena, some no zoom bem aberto */
+  #map.zoom-tier-0 .bairro-name-label{font-size:9px;}
+  #map.zoom-tier-1 .bairro-name-label{font-size:9.5px;}
+  #map.zoom-tier-2 .bairro-name-label{font-size:10.5px;}
+  #map.zoom-tier-3 .bairro-name-label{font-size:12px;}
+  #map.zoom-tier-0 .praca-name-label{display:none;}
+  #map.zoom-tier-1 .praca-name-label{font-size:10px;}
+  #map.zoom-tier-2 .praca-name-label{font-size:11.5px;}
+  #map.zoom-tier-3 .praca-name-label{font-size:13px;}
 
   .endpoint-flag{display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; background:var(--surface); border:2px solid var(--accent); box-shadow:0 3px 8px rgba(0,0,0,0.4); font-size:15px;}
   .user-loc-wrap{width:52px; height:52px; position:relative;}
@@ -570,6 +569,7 @@ var drawingCloseHint = null;
 var drawingMarkers = [];
 var drawUndoStack = []; // quantos pontos remover de uma vez ao "Desfazer" (1 = toque; vários = um trecho arrastado)
 var drawSubMode = "tap"; // "tap" (ponto a ponto) | "freehand" (arrastar, melhor pra curvas)
+var drawingKind = "bairro"; // o que o modo "bairro" está desenhando agora: "bairro" | "praca" (praça reaproveita a estrutura de bairro, só sem contorno)
 var freehandActive = false;
 var freehandPts = []; // pontos em pixel da tela durante o arrasto em andamento
 var freehandPreviewLayer = null;
@@ -1306,10 +1306,16 @@ function pointInPolygon(pt, poly){
   return inside;
 }
 function neighborhoodOfPoint(pt){
-  for(var i=0;i<neighborhoods.length;i++){ if(pointInPolygon(pt, neighborhoods[i].points)) return neighborhoods[i]; }
+  // praça primeiro: ela costuma ficar DENTRO de um bairro, e quem está na praça deve agrupar nela
+  for(var i=0;i<neighborhoods.length;i++){ if(neighborhoods[i].kind==="praca" && pointInPolygon(pt, neighborhoods[i].points)) return neighborhoods[i]; }
+  for(var j=0;j<neighborhoods.length;j++){ if(neighborhoods[j].kind!=="praca" && pointInPolygon(pt, neighborhoods[j].points)) return neighborhoods[j]; }
   return null;
 }
-function houseInNeighborhood(h, nId){ return neighborhoodOfPoint({lat:h.lat,lng:h.lng}) && neighborhoodOfPoint({lat:h.lat,lng:h.lng}).id===nId; }
+// filtro/contagem por área: vale a geometria da área escolhida (uma casa numa praça também conta pro bairro que envolve a praça)
+function houseInNeighborhood(h, nId){
+  var n = neighborhoods.find(function(x){return x.id===nId;});
+  return !!n && pointInPolygon({lat:h.lat,lng:h.lng}, n.points);
+}
 function streetInNeighborhood(s, nId){
   var n = neighborhoods.find(function(x){return x.id===nId;});
   if(!n) return false;
@@ -1520,7 +1526,7 @@ function initMap(){
     });
   }
   map.on("zoom move", syncOverlayTransform);
-  map.on("zoomend", applyZoomTierClass);
+  map.on("zoomend", function(){ applyZoomTierClass(); scheduleStreetsRerender(); });
 
   startLiveLocation();
 }
@@ -2138,6 +2144,9 @@ function openEditMenu(){
     '<button type="button" class="edit-menu-row" id="menu-add-bairro">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>'+
       'Adicionar bairro</button>'+
+    '<button type="button" class="edit-menu-row" id="menu-add-praca">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M12 15v6M9 21h6"/></svg>'+
+      'Adicionar praça</button>'+
     '<button type="button" class="edit-menu-row" id="menu-add-street">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="4"/></svg>'+
       'Adicionar rua</button>'+
@@ -2156,7 +2165,8 @@ function openEditMenu(){
       '<span>'+(isLight()?"Ativar modo escuro":"Ativar modo claro")+'</span></button>'+
     '<button type="button" class="btn-ghost" id="menu-close" style="width:100%;border:none;border-radius:12px;padding:13px;margin-top:14px;">Cancelar</button>'
   );
-  document.getElementById("menu-add-bairro").addEventListener("click", function(){ closeModal(); setMode("bairro"); });
+  document.getElementById("menu-add-bairro").addEventListener("click", function(){ closeModal(); drawingKind="bairro"; setMode("bairro"); });
+  document.getElementById("menu-add-praca").addEventListener("click", function(){ closeModal(); drawingKind="praca"; setMode("bairro"); });
   document.getElementById("menu-add-street").addEventListener("click", function(){ closeModal(); setMode("street"); });
   document.getElementById("menu-add-house").addEventListener("click", function(){ closeModal(); setMode("house"); });
   document.getElementById("menu-edit-el").addEventListener("click", function(){ closeModal(); setMode("edit"); });
@@ -2184,6 +2194,7 @@ function setMode(m){
   document.getElementById("edit-menu-btn").classList.toggle("active", mode!=="view");
   updateDrawBanner();
   if(wasEdit!==willBeEdit && streetLayerGroup) renderStreetsOnMap(); // mostra/esconde a linha de geometria
+  if(neighborhoodLayerGroup) renderNeighborhoodsOnMap(); // praça só mostra o contorno enquanto edita
 }
 function updateDrawBanner(){
   var banner = document.getElementById("draw-banner");
@@ -2210,14 +2221,15 @@ function updateDrawBanner(){
     if(drawingPoints.length>0) actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
   } else if(mode==="bairro"){
     banner.classList.add("show");
+    var isPracaDraw = drawingKind==="praca";
     if(drawSubMode==="freehand"){
-      text.textContent = drawingPoints.length<3 ? "Arraste o dedo contornando o bairro." : drawingPoints.length+" pontos marcados. Arraste pra continuar ou finalize.";
+      text.textContent = drawingPoints.length<3 ? (isPracaDraw?"Arraste o dedo contornando a praça.":"Arraste o dedo contornando o bairro.") : drawingPoints.length+" pontos marcados. Arraste pra continuar ou finalize.";
     } else {
-      text.textContent = drawingPoints.length<3 ? "Toque no mapa para marcar o contorno do bairro (mín. 3 pontos)." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
+      text.textContent = drawingPoints.length<3 ? "Toque no mapa para marcar o contorno "+(isPracaDraw?"da praça":"do bairro")+" (mín. 3 pontos)." : drawingPoints.length+" pontos marcados. Toque em novos pontos ou finalize.";
     }
     actions.innerHTML="";
     if(drawingPoints.length>0) actions.appendChild(makeBtn(undoLabel,"btn-ghost",undoLastDraw));
-    if(drawingPoints.length>=3) actions.appendChild(makeBtn("Concluir bairro","btn-primary",finishNeighborhoodDrawing));
+    if(drawingPoints.length>=3) actions.appendChild(makeBtn(isPracaDraw?"Concluir praça":"Concluir bairro","btn-primary",finishNeighborhoodDrawing));
     if(drawingPoints.length>0) actions.appendChild(makeBtn("Cancelar","btn-danger",cancelDrawing));
   } else if(mode==="house"){
     banner.classList.add("show"); text.textContent = "Toque no mapa sobre a casa para cadastrar o número."; actions.innerHTML="";
@@ -2324,19 +2336,22 @@ function openStreetPopup(s){
 ============================================================ */
 function finishNeighborhoodDrawing(){ openNeighborhoodForm(null, drawingPoints.slice()); }
 function openNeighborhoodForm(existing, newPoints){
+  var isPraca = existing ? existing.kind==="praca" : drawingKind==="praca";
+  var word = isPraca ? "praça" : "bairro";
   // pra bairro novo, sugere uma cor diferente a cada vez (em vez de sempre a mesma,
   // que fazia parecer que a cor "não colava" quando na real ninguém trocava o padrão)
   var colorPalette = ["#FBBF24","#F472B6","#60A5FA","#34D399","#FB923C","#A78BFA","#F87171","#2DD4BF"];
   var defaultColor = colorPalette[neighborhoods.length % colorPalette.length];
   var currentColor = (existing && existing.color) ? existing.color : defaultColor;
   openModal(
-    '<h2>'+(existing?"Editar bairro":"Novo bairro")+'</h2>'+
-    '<label class="field-label">Nome do bairro</label>'+
-    '<input type="text" id="f-bairro-name" placeholder="Ex: Centro" value="'+(existing?escapeAttr(existing.name):"")+'">'+
-    '<label class="field-label">Cor do contorno</label>'+
-    '<input type="color" id="f-bairro-color" value="'+currentColor+'" style="width:100%;height:44px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);margin-bottom:14px;padding:4px;">'+
-    '<div class="modal-actions"><button class="btn-ghost" id="f-bairro-cancel">Cancelar</button><button class="btn-primary" id="f-bairro-save">Salvar bairro</button></div>'+
-    (existing ? '<button class="btn-danger" id="f-bairro-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir bairro</button>' : '')
+    '<h2>'+(existing ? "Editar "+word : (isPraca?"Nova praça":"Novo bairro"))+'</h2>'+
+    '<label class="field-label">Nome '+(isPraca?"da praça":"do bairro")+'</label>'+
+    '<input type="text" id="f-bairro-name" placeholder="'+(isPraca?"Ex: Praça dos Minérios":"Ex: Centro")+'" value="'+(existing?escapeAttr(existing.name):"")+'">'+
+    (isPraca ? '<p class="card-meta" style="margin:0 0 14px;">Praça não tem contorno no mapa: só o nome no centro. As casas dentro da área ficam agrupadas nela.</p>' :
+      '<label class="field-label">Cor do contorno</label>'+
+      '<input type="color" id="f-bairro-color" value="'+currentColor+'" style="width:100%;height:44px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);margin-bottom:14px;padding:4px;">')+
+    '<div class="modal-actions"><button class="btn-ghost" id="f-bairro-cancel">Cancelar</button><button class="btn-primary" id="f-bairro-save">Salvar '+word+'</button></div>'+
+    (existing ? '<button class="btn-danger" id="f-bairro-delete" style="width:100%;margin-top:10px;border-radius:10px;padding:12px;background:transparent;">Excluir '+word+'</button>' : '')
   );
   document.getElementById("f-bairro-cancel").addEventListener("click", function(){
     if(!existing){ drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
@@ -2344,27 +2359,32 @@ function openNeighborhoodForm(existing, newPoints){
   });
   document.getElementById("f-bairro-save").addEventListener("click", function(){
     var name = document.getElementById("f-bairro-name").value.trim();
-    var color = document.getElementById("f-bairro-color").value;
-    if(!name){ showToast("Dê um nome para o bairro.", "warning"); return; }
+    var colorEl = document.getElementById("f-bairro-color");
+    var color = colorEl ? colorEl.value : null;
+    if(!name){ showToast("Dê um nome para "+(isPraca?"a praça.":"o bairro."), "warning"); return; }
     var savedNeighborhood;
-    if(existing){ existing.name = name; existing.color = color; savedNeighborhood=existing; }
-    else { savedNeighborhood={id:uid(), name:name, points:newPoints, color:color}; neighborhoods.push(savedNeighborhood); drawingPoints=[]; redrawDrawing(); updateDrawBanner(); }
+    if(existing){ existing.name = name; if(colorEl) existing.color = color; savedNeighborhood=existing; }
+    else {
+      savedNeighborhood={id:uid(), name:name, points:newPoints};
+      if(isPraca) savedNeighborhood.kind="praca"; else savedNeighborhood.color=color;
+      neighborhoods.push(savedNeighborhood); drawingPoints=[]; redrawDrawing(); updateDrawBanner();
+    }
     saveNeighborhoods();
     upsertRemoteItem("rotas_neighborhoods", savedNeighborhood);
     renderNeighborhoodsOnMap(); populateBairroFilter(); renderListaPanel();
-    closeModal(); showToast("Bairro salvo.", "success");
+    closeModal(); showToast(isPraca?"Praça salva.":"Bairro salvo.", "success");
   });
   if(existing){
     document.getElementById("f-bairro-delete").addEventListener("click", function(){
-      // Só remove o bairro em si. Ruas e casas não são tocadas — o
-      // pertencimento a um bairro é sempre calculado na hora (geometria),
+      // Só remove a área em si. Ruas e casas não são tocadas — o
+      // pertencimento a um bairro/praça é sempre calculado na hora (geometria),
       // nunca guardado nelas, então elas automaticamente passam a aparecer
       // como "sem bairro" assim que o polígono deixa de existir.
       neighborhoods = neighborhoods.filter(function(x){return x.id!==existing.id;});
       saveNeighborhoods();
       deleteRemoteItem("rotas_neighborhoods", existing.id);
       renderNeighborhoodsOnMap(); populateBairroFilter(); renderListaPanel();
-      closeModal(); showToast("Bairro excluído.", "success");
+      closeModal(); showToast(isPraca?"Praça excluída.":"Bairro excluído.", "success");
     });
   }
 }
@@ -2441,10 +2461,87 @@ function currentNextStopKey(){
   if(!info || info.isEnd) return null;
   return stopKey(info.kind, info.id);
 }
+/* ============================================================
+   RÓTULOS DE RUA "LIMPOS" (estilo Apple/Google Maps)
+   -----------------------------------------------------------
+   Só texto com halo, sem caixa. A cada zoom o app recalcula, por rua:
+   - quantos pixels o traçado tem na tela (comprimento real / metros por pixel);
+   - qual versão do nome CABE dentro desse traçado (nome completo, abreviado
+     tipo "Dr."/"Av.", só o primeiro nome, ou fonte um pouco menor); se nada
+     couber, a rua fica sem nome naquele zoom em vez de vazar pra fora;
+   - quantas cópias repetir ao longo da rua (só se sobrar bastante espaço);
+   - se a cópia bate em outro nome já colocado (ruas mais longas têm
+     prioridade), ela é descartada — nada de nomes um em cima do outro.
+   O ângulo do texto acompanha a corda do trecho que ele ocupa, então em
+   ruas com curva suave o nome fica alinhado com a rua.
+============================================================ */
+var LABEL_ABBREV = {"Avenida":"Av.","Travessa":"Tv.","Doutor":"Dr.","Doutora":"Dra.","Professor":"Prof.","Professora":"Profa.",
+  "Engenheiro":"Eng.","Coronel":"Cel.","Capitão":"Cap.","Major":"Maj.","Padre":"Pe.","Presidente":"Pres.","Governador":"Gov.",
+  "Senhor":"Sr.","Santa":"Sta.","Santo":"Sto.","General":"Gen.","Comendador":"Com.","Deputado":"Dep.","Vereador":"Ver.",
+  "Tenente":"Ten.","Sargento":"Sgt.","Marechal":"Mal.","Almirante":"Alm.","Monsenhor":"Mons.","Rua":"R."};
+function abbreviateStreetName(name){
+  return name.split(" ").map(function(w){ return LABEL_ABBREV[w] || w; }).join(" ");
+}
+var labelCtx = null, labelFontFamily = "sans-serif";
+function measureLabelPx(text, fontPx){
+  if(!labelCtx){
+    labelCtx = document.createElement("canvas").getContext("2d");
+    labelFontFamily = getComputedStyle(document.body).fontFamily || "sans-serif";
+  }
+  labelCtx.font = "600 "+fontPx+"px "+labelFontFamily;
+  return labelCtx.measureText(text).width;
+}
+function pathCumulative(points){
+  var cum=[0];
+  for(var i=0;i<points.length-1;i++) cum.push(cum[i]+haversine(points[i],points[i+1]));
+  return cum;
+}
+function pointAtMeters(points, cum, d){
+  var total = cum[cum.length-1];
+  if(d<=0) return points[0];
+  if(d>=total) return points[points.length-1];
+  for(var i=0;i<cum.length-1;i++){
+    if(cum[i+1]>=d){
+      var seg = cum[i+1]-cum[i], t = seg>0 ? (d-cum[i])/seg : 0, a=points[i], b=points[i+1];
+      return {lat:a.lat+(b.lat-a.lat)*t, lng:a.lng+(b.lng-a.lng)*t};
+    }
+  }
+  return points[points.length-1];
+}
+/* retângulos girados (o retângulo do texto) — teste de sobreposição por eixos separadores */
+function rectCorners(r){
+  var cs=Math.cos(r.ang*Math.PI/180), sn=Math.sin(r.ang*Math.PI/180), hw=r.w/2, hh=r.h/2;
+  return [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(function(p){
+    return {x:r.cx+p[0]*cs-p[1]*sn, y:r.cy+p[0]*sn+p[1]*cs};
+  });
+}
+function rectsOverlap(a, b){
+  var dx=a.cx-b.cx, dy=a.cy-b.cy, reach=(Math.sqrt(a.w*a.w+a.h*a.h)+Math.sqrt(b.w*b.w+b.h*b.h))/2;
+  if(dx*dx+dy*dy > reach*reach) return false; // longe demais pra encostar
+  var pa=rectCorners(a), pb=rectCorners(b);
+  var edges=[[pa[0],pa[1]],[pa[1],pa[2]],[pb[0],pb[1]],[pb[1],pb[2]]];
+  for(var e=0;e<edges.length;e++){
+    var ax=-(edges[e][1].y-edges[e][0].y), ay=edges[e][1].x-edges[e][0].x;
+    var minA=Infinity,maxA=-Infinity,minB=Infinity,maxB=-Infinity;
+    pa.forEach(function(p){ var v=p.x*ax+p.y*ay; if(v<minA)minA=v; if(v>maxA)maxA=v; });
+    pb.forEach(function(p){ var v=p.x*ax+p.y*ay; if(v<minB)minB=v; if(v>maxB)maxB=v; });
+    if(maxA<minB || maxB<minA) return false; // achou um eixo que separa os dois
+  }
+  return true;
+}
+var streetsRerenderTimer = null;
+function scheduleStreetsRerender(){
+  if(streetsRerenderTimer) clearTimeout(streetsRerenderTimer);
+  streetsRerenderTimer = setTimeout(function(){ if(streetLayerGroup && map) renderStreetsOnMap(); }, 120);
+}
 function renderStreetsOnMap(){
   streetLayerGroup.clearLayers();
   var nextKey = currentNextStopKey();
   var showGeometry = (mode==="edit"); // linha SVG só aparece durante edição
+  var z = map.getZoom();
+  var labelsOn = currentZoomTier(z) > 0; // bem afastado: sem nome de rua nenhum
+  var baseFs = Math.max(9, Math.min(12.5, 9 + (z-16.5)*2.3));
+  var items = [];
   streets.forEach(function(s){
     var isNext = nextKey === stopKey("street", s.id);
     if(showGeometry){
@@ -2452,32 +2549,59 @@ function renderStreetsOnMap(){
       var line = L.polyline(latlngs, {className:"street-line "+(s.twoWay?"street-twoway":"street-oneway")+(isNext?" next-stop":""), weight: isNext?6:4, opacity:0.9}).addTo(streetLayerGroup);
       line.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
     }
-    // repete o nome a cada ~220m de rua (em vez de só um rótulo gigante no meio),
-    // pra ficar proporcional em ruas longas e sempre visível na tela mesmo com
-    // pan. A seta usa "↑"/"↕" com uma rotação PRÓPRIA, calculada pelo rumo real
-    // (igual ao cone do usuário) — não pela rotação "de leitura" do texto, que
-    // pode virar 180° só pra não ficar de cabeça pra baixo. Assim a seta nunca
-    // aponta errado, mesmo quando o texto gira pra continuar legível.
-    var arrowGlyph = s.twoWay ? "↕" : "↑";
-    var samples = sampleAlongPath(s.points, 220);
-    samples.forEach(function(mb){
-      var mapBearing = map.getBearing();
-      var labelAngle = textRotationFor(mb.bearing, mapBearing);
-      var trueAngle = (mb.bearing + mapBearing + 360) % 360;
-      var arrowRot = trueAngle - labelAngle; // rotação relativa: o pai já girou labelAngle, isso completa até o ângulo real
-      var cls = "street-name-label "+(s.twoWay?"dir-twoway":"dir-oneway")+(isNext?" next-stop":"");
-      var html = '<div class="'+cls+'" style="transform:translate(-50%,-50%) rotate('+labelAngle+'deg);">'+
-        '<span class="street-dir-arrow" style="transform:rotate('+arrowRot+'deg);">'+arrowGlyph+'</span>'+escapeHtml(s.names.join(" / "))+'</div>';
-      var labelIcon = L.divIcon({className:"", html:html, iconSize:[0,0]});
-      var lm = L.marker([mb.pt.lat, mb.pt.lng], {icon:labelIcon}).addTo(streetLayerGroup);
-      lm._streetBearing = mb.bearing; // guardado pra realinhar no rotate sem recriar nada
-      lm.on("click", function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(s); } });
+    if(!labelsOn || !s.points || s.points.length<2) return;
+    var cum = pathCumulative(s.points), total = cum[cum.length-1];
+    var mpp = 156543.03392*Math.cos(s.points[0].lat*Math.PI/180)/Math.pow(2, z); // metros por pixel neste zoom
+    items.push({s:s, isNext:isNext, cum:cum, total:total, mpp:mpp, pxLen:total/mpp});
+  });
+  // prioridade: a próxima parada da rota primeiro, depois as ruas mais longas
+  items.sort(function(a,b){ return (b.isNext-a.isNext) || (b.pxLen-a.pxLen); });
+  var placed = [];
+  items.forEach(function(it){
+    var s = it.s;
+    var full = s.names.join(" / ");
+    var cands = [full, abbreviateStreetName(full), s.names[0], abbreviateStreetName(s.names[0])]
+      .filter(function(t,i,arr){ return arr.indexOf(t)===i; });
+    var chosen = null;
+    [1, 0.88].some(function(scale){
+      var f = baseFs*scale;
+      if(f < 8.5) return false;
+      return cands.some(function(t){
+        var w = measureLabelPx(t, f) + (f*1.05+3); // + a setinha de sentido
+        if(w <= it.pxLen*0.9){ chosen = {text:t, w:w, fs:f}; return true; }
+        return false;
+      });
     });
+    if(!chosen) return; // nenhuma versão cabe dentro do traçado neste zoom
+    var n = Math.max(1, Math.min(5, Math.floor(it.pxLen/(chosen.w*2.4))));
+    var arrowGlyph = s.twoWay ? "↕" : "↑";
+    for(var k=0;k<n;k++){
+      var c0 = it.total*(k+0.5)/n;
+      var half = chosen.w*it.mpp/2;
+      var pc = pointAtMeters(s.points, it.cum, c0);
+      var pa = pointAtMeters(s.points, it.cum, Math.max(0, c0-half));
+      var pb = pointAtMeters(s.points, it.cum, Math.min(it.total, c0+half));
+      var brg = (pa.lat===pb.lat && pa.lng===pb.lng) ? 0 : bearing(pa, pb); // corda do trecho que o texto ocupa
+      var lp = map.latLngToLayerPoint([pc.lat, pc.lng]);
+      var rect = {cx:lp.x, cy:lp.y, w:chosen.w+8, h:chosen.fs*1.3+4, ang:textRotationFor(brg, 0)};
+      if(placed.some(function(r){ return rectsOverlap(r, rect); })) continue; // já tem nome ali
+      placed.push(rect);
+      var mapBearing = map.getBearing();
+      var labelAngle = textRotationFor(brg, mapBearing);
+      var trueAngle = (brg + mapBearing + 360) % 360;
+      // a seta gira pelo rumo real (independente do texto, que pode virar 180° só pra ficar legível)
+      var arrowRot = trueAngle - labelAngle;
+      var cls = "street-name-label "+(s.twoWay?"dir-twoway":"dir-oneway")+(it.isNext?" next-stop":"");
+      var html = '<div class="'+cls+'" style="font-size:'+chosen.fs.toFixed(1)+'px; transform:translate(-50%,-50%) rotate('+labelAngle+'deg);">'+
+        '<span class="street-dir-arrow" style="transform:rotate('+arrowRot+'deg);">'+arrowGlyph+'</span>'+escapeHtml(chosen.text)+'</div>';
+      var labelIcon = L.divIcon({className:"", html:html, iconSize:[0,0]});
+      var lm = L.marker([pc.lat, pc.lng], {icon:labelIcon}).addTo(streetLayerGroup);
+      lm._streetBearing = brg; // guardado pra realinhar no rotate sem recriar nada
+      lm.on("click", (function(street){ return function(ev){ if(mode==="edit"){ L.DomEvent.stopPropagation(ev); openStreetPopup(street); } }; })(s));
+    }
   });
   applyZoomTierClass();
 }
-/* realinha só o texto dos rótulos de rua quando o mapa gira — não mexe em
-   posição (o Leaflet já faz isso sozinho) nem recria nenhum marker */
 function updateStreetLabelRotations(){
   if(!streetLayerGroup) return;
   var mapBearing = map.getBearing();
@@ -2532,15 +2656,23 @@ function neighborhoodCentroid(points){
 }
 function renderNeighborhoodsOnMap(){
   neighborhoodLayerGroup.clearLayers();
+  var editing = (mode!=="view"); // praça não tem contorno no mapa normal; só aparece (tracejado) enquanto edita, pra dar pra tocar nela
   neighborhoods.forEach(function(n){
+    var isPraca = n.kind==="praca";
     var latlngs = n.points.map(function(p){return [p.lat,p.lng];});
-    var poly = L.polygon(latlngs, {
-      className:"bairro-poly", weight:2.5, fill:false,
-      color: n.color || (isLight() ? "#B45309" : "#FBBF24") // sem cor salva (bairro antigo) -> mesmo padrão do formulário
-    }).addTo(neighborhoodLayerGroup);
-    poly.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
+    if(!isPraca || editing){
+      var opts = isPraca
+        ? {className:"bairro-poly", weight:2, fill:false, dashArray:"6,6", color:"#22C55E", opacity:0.85}
+        : {className:"bairro-poly", weight:2.5, fill:false,
+           color: n.color || (isLight() ? "#B45309" : "#FBBF24")}; // sem cor salva (bairro antigo) -> mesmo padrão do formulário
+      var poly = L.polygon(latlngs, opts).addTo(neighborhoodLayerGroup);
+      poly.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
+    }
     var c = neighborhoodCentroid(n.points);
-    var labelIcon = L.divIcon({className:"", html:'<div class="bairro-name-label" style="transform:translate(-50%,-50%);'+(n.color?(' color:'+n.color+';'):'')+'">'+escapeHtml(n.name)+'</div>', iconSize:[0,0]});
+    var labelHtml = isPraca
+      ? '<div class="praca-name-label" style="transform:translate(-50%,-50%);">🌳 '+escapeHtml(n.name)+'</div>'
+      : '<div class="bairro-name-label" style="transform:translate(-50%,-50%);'+(n.color?(' color:'+n.color+';'):'')+'">'+escapeHtml(n.name)+'</div>';
+    var labelIcon = L.divIcon({className:"", html:labelHtml, iconSize:[0,0]});
     var lm = L.marker([c.lat,c.lng], {icon:labelIcon}).addTo(neighborhoodLayerGroup);
     lm.on("click", function(ev){ if(mode==="edit"||mode==="bairro"){ L.DomEvent.stopPropagation(ev); openNeighborhoodPopup(n); } });
   });
@@ -2792,7 +2924,7 @@ function renderListaPanel(){
 
   var html = "";
   neighborhoods.forEach(function(n){
-    html += bairroBlock(n.id, n.name, n.color||"var(--bairro)", streetsByBairro[n.id]||[], orphanHousesByBairro[n.id]||[]);
+    html += bairroBlock(n.id, (n.kind==="praca"?"🌳 ":"")+n.name, n.kind==="praca" ? "#22C55E" : (n.color||"var(--bairro)"), streetsByBairro[n.id]||[], orphanHousesByBairro[n.id]||[]);
   });
   html += bairroBlock("__no_bairro__", "Sem bairro", null, orphanStreets, []);
   if(globalOrphanHouses.length){
@@ -2885,7 +3017,7 @@ document.getElementById("btn-set-end").addEventListener("click", function(){
 function populateBairroFilter(){
   var sel = document.getElementById("bairro-filter");
   var current = sel.value;
-  sel.innerHTML = '<option value="">Todos os bairros</option>'+neighborhoods.map(function(n){return '<option value="'+n.id+'">'+escapeHtml(n.name)+'</option>';}).join("");
+  sel.innerHTML = '<option value="">Todos os bairros e praças</option>'+neighborhoods.map(function(n){return '<option value="'+n.id+'">'+(n.kind==="praca"?"🌳 ":"")+escapeHtml(n.name)+'</option>';}).join("");
   sel.value = neighborhoods.some(function(n){return n.id===current;}) ? current : "";
   bairroFilterId = sel.value;
 }
