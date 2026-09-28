@@ -235,6 +235,7 @@
     text-shadow:0 0 2px var(--street-label-halo), 0 0 2px var(--street-label-halo), 0 0 4px var(--street-label-halo), 0 0 4px var(--street-label-halo), 0 0 7px var(--street-label-halo);
   }
   .street-name-label.next-stop{color:var(--accent-light); font-weight:700;}
+  .badge-praca{background:rgba(74,222,128,0.16); color:var(--praca);}
   .street-dir-arrow{display:inline-block; margin-right:3px; font-weight:800; font-size:0.95em; opacity:0.95;}
   .street-name-label.dir-twoway .street-dir-arrow{color:var(--twoway);}
   .street-name-label.dir-oneway .street-dir-arrow{color:var(--oneway);}
@@ -313,8 +314,8 @@
   #magnifier{position:fixed; left:0; top:0; width:136px; height:136px; border-radius:50%; overflow:hidden; border:3px solid #fff; box-shadow:0 8px 24px rgba(0,0,0,0.55); z-index:500; pointer-events:none; transform:translate(-50%, calc(-100% - 26px)); display:none;}
   #magnifier.show{display:block;}
   #magnifier.below{transform:translate(-50%, 34px);}
-  #magnifier-inner{width:100%; height:100%;}
-  #magnifier-crosshair{position:absolute; left:50%; top:50%; width:13px; height:13px; margin-left:-6.5px; margin-top:-6.5px; border-radius:50%; background:#EF4444; border:2.5px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5);}
+  #magnifier-inner{width:100%; height:100%; isolation:isolate;} /* as camadas do Leaflet têm z-index alto (200-700); isolando, elas não passam por cima da bolinha */
+  #magnifier-crosshair{z-index:10; position:absolute; left:50%; top:50%; width:13px; height:13px; margin-left:-6.5px; margin-top:-6.5px; border-radius:50%; background:#EF4444; border:2.5px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5);}
 
   .street-line.street-twoway{stroke:var(--twoway) !important;}
   .street-line.street-oneway{stroke:var(--oneway) !important;}
@@ -1293,8 +1294,13 @@ function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, function(c){return {"
 function escapeAttr(s){ return escapeHtml(s); }
 
 function streetById(id){ return streets.find(function(s){return s.id===id;}); }
-function streetLabelForHouse(h){ var s = streetById(h.streetId); return s ? s.names.join(" / ") : ""; }
-function countHousesForStreet(id){ return houses.filter(function(h){return h.streetId===id;}).length; }
+// endereço da casa: a praça onde ela está (se estiver dentro de uma) ou, senão, a rua vinculada
+function streetLabelForHouse(h){
+  var pr = pracaOfHouse(h);
+  if(pr) return pr.name;
+  var s = streetById(h.streetId); return s ? s.names.join(" / ") : "";
+}
+function countHousesForStreet(id){ return houses.filter(function(h){return h.streetId===id && !pracaOfHouse(h);}).length; }
 
 function pointInPolygon(pt, poly){
   var inside=false;
@@ -1305,12 +1311,18 @@ function pointInPolygon(pt, poly){
   }
   return inside;
 }
+/* Praça é ENDEREÇO (como uma rua), não um bairro: fica dentro de um bairro e
+   agrupa as casas dela. Por isso neighborhoodOfPoint só olha bairros de
+   verdade, e a praça tem a sua própria consulta. */
 function neighborhoodOfPoint(pt){
-  // praça primeiro: ela costuma ficar DENTRO de um bairro, e quem está na praça deve agrupar nela
-  for(var i=0;i<neighborhoods.length;i++){ if(neighborhoods[i].kind==="praca" && pointInPolygon(pt, neighborhoods[i].points)) return neighborhoods[i]; }
-  for(var j=0;j<neighborhoods.length;j++){ if(neighborhoods[j].kind!=="praca" && pointInPolygon(pt, neighborhoods[j].points)) return neighborhoods[j]; }
+  for(var i=0;i<neighborhoods.length;i++){ if(neighborhoods[i].kind!=="praca" && pointInPolygon(pt, neighborhoods[i].points)) return neighborhoods[i]; }
   return null;
 }
+function pracaOfPoint(pt){
+  for(var i=0;i<neighborhoods.length;i++){ if(neighborhoods[i].kind==="praca" && pointInPolygon(pt, neighborhoods[i].points)) return neighborhoods[i]; }
+  return null;
+}
+function pracaOfHouse(h){ return pracaOfPoint({lat:h.lat,lng:h.lng}); }
 // filtro/contagem por área: vale a geometria da área escolhida (uma casa numa praça também conta pro bairro que envolve a praça)
 function houseInNeighborhood(h, nId){
   var n = neighborhoods.find(function(x){return x.id===nId;});
@@ -2347,7 +2359,7 @@ function openNeighborhoodForm(existing, newPoints){
     '<h2>'+(existing ? "Editar "+word : (isPraca?"Nova praça":"Novo bairro"))+'</h2>'+
     '<label class="field-label">Nome '+(isPraca?"da praça":"do bairro")+'</label>'+
     '<input type="text" id="f-bairro-name" placeholder="'+(isPraca?"Ex: Praça dos Minérios":"Ex: Centro")+'" value="'+(existing?escapeAttr(existing.name):"")+'">'+
-    (isPraca ? '<p class="card-meta" style="margin:0 0 14px;">Praça não tem contorno no mapa: só o nome no centro. As casas dentro da área ficam agrupadas nela.</p>' :
+    (isPraca ? '<p class="card-meta" style="margin:0 0 14px;">Praça funciona como um endereço: fica dentro do bairro onde está, sem contorno no mapa (só o nome). As casas dentro da área ficam agrupadas nela.</p>' :
       '<label class="field-label">Cor do contorno</label>'+
       '<input type="color" id="f-bairro-color" value="'+currentColor+'" style="width:100%;height:44px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);margin-bottom:14px;padding:4px;">')+
     '<div class="modal-actions"><button class="btn-ghost" id="f-bairro-cancel">Cancelar</button><button class="btn-primary" id="f-bairro-save">Salvar '+word+'</button></div>'+
@@ -2390,10 +2402,18 @@ function openNeighborhoodForm(existing, newPoints){
 }
 function openNeighborhoodPopup(n){
   var houseCount = houses.filter(function(h){return houseInNeighborhood(h,n.id);}).length;
-  var streetCount = streets.filter(function(s){return streetInNeighborhood(s,n.id);}).length;
+  var meta;
+  if(n.kind==="praca"){
+    var inBairro = neighborhoodOfPoint(neighborhoodCentroid(n.points));
+    meta = houseCount+(houseCount===1?' casa':' casas')+' nesta praça'+(inBairro?' · no bairro '+escapeHtml(inBairro.name):'');
+  } else {
+    var streetCount = streets.filter(function(s){return streetInNeighborhood(s,n.id);}).length;
+    var pracaCount = neighborhoods.filter(function(p){return p.kind==="praca" && neighborhoodOfPoint(neighborhoodCentroid(p.points)) && neighborhoodOfPoint(neighborhoodCentroid(p.points)).id===n.id;}).length;
+    meta = streetCount+' ruas · '+(pracaCount?pracaCount+(pracaCount===1?' praça · ':' praças · '):'')+houseCount+' casas dentro da área';
+  }
   openModal(
     '<h2>'+escapeHtml(n.name)+'</h2>'+
-    '<p class="card-meta">'+streetCount+' ruas · '+houseCount+' casas dentro da área</p>'+
+    '<p class="card-meta">'+meta+'</p>'+
     '<div class="modal-actions" style="margin-top:16px;"><button class="btn-ghost" id="nb-close">Fechar</button><button class="btn-primary" id="nb-edit">Editar</button></div>'
   );
   document.getElementById("nb-close").addEventListener("click", closeModal);
@@ -2670,7 +2690,7 @@ function renderNeighborhoodsOnMap(){
     }
     var c = neighborhoodCentroid(n.points);
     var labelHtml = isPraca
-      ? '<div class="praca-name-label" style="transform:translate(-50%,-50%);">🌳 '+escapeHtml(n.name)+'</div>'
+      ? '<div class="praca-name-label" style="transform:translate(-50%,-50%);">'+escapeHtml(n.name)+'</div>'
       : '<div class="bairro-name-label" style="transform:translate(-50%,-50%);'+(n.color?(' color:'+n.color+';'):'')+'">'+escapeHtml(n.name)+'</div>';
     var labelIcon = L.divIcon({className:"", html:labelHtml, iconSize:[0,0]});
     var lm = L.marker([c.lat,c.lng], {icon:labelIcon}).addTo(neighborhoodLayerGroup);
@@ -2842,23 +2862,38 @@ function renderListaPanel(){
   function matchesQuery(text){ return !hasQuery || (text||"").toLowerCase().includes(q); }
   function streetMatches(s){ return matchesQuery(s.names.join(" ")); }
   function houseMatches(h){ return matchesQuery(h.number) || matchesQuery(streetLabelForHouse(h)); }
-  function housesForStreet(s){ return houses.filter(function(h){return h.streetId===s.id;}); }
+  // praça é endereço: as casas dentro dela ficam agrupadas nela (e não na rua vinculada)
+  var pracaByHouse = {}, housesByPraca = {};
+  houses.forEach(function(h){
+    var p = pracaOfHouse(h);
+    if(p){ pracaByHouse[h.id]=p.id; (housesByPraca[p.id]=housesByPraca[p.id]||[]).push(h); }
+  });
+  function housesForStreet(s){ return houses.filter(function(h){return h.streetId===s.id && !pracaByHouse[h.id];}); }
+  function housesForPraca(p){ return housesByPraca[p.id]||[]; }
 
   /* Pertencimento bairro/rua/casa é sempre calculado na hora, reaproveitando
      streetInNeighborhood/neighborhoodOfPoint que já existiam — nenhum ID
      novo foi criado. Uma rua que cruza a borda de dois bairros aparece nos
      dois (mesmo comportamento que o filtro da aba Rota já tinha). */
   var streetsByBairro = {}, orphanStreets = [];
+  var bairrosList = neighborhoods.filter(function(n){return n.kind!=="praca";});
   streets.forEach(function(s){
     var belongsToAny = false;
-    neighborhoods.forEach(function(n){
+    bairrosList.forEach(function(n){
       if(streetInNeighborhood(s, n.id)){ belongsToAny = true; (streetsByBairro[n.id]=streetsByBairro[n.id]||[]).push(s); }
     });
     if(!belongsToAny) orphanStreets.push(s);
   });
+  // cada praça fica dentro do bairro onde está o centro dela
+  var pracasByBairro = {}, orphanPracas = [];
+  neighborhoods.forEach(function(p){
+    if(p.kind!=="praca") return;
+    var nb = neighborhoodOfPoint(neighborhoodCentroid(p.points));
+    if(nb) (pracasByBairro[nb.id]=pracasByBairro[nb.id]||[]).push(p); else orphanPracas.push(p);
+  });
   var orphanHousesByBairro = {}, globalOrphanHouses = [];
   houses.forEach(function(h){
-    if(h.streetId) return; // já aparece dentro da rua dela
+    if(h.streetId || pracaByHouse[h.id]) return; // já aparece dentro da rua (ou da praça) dela
     var nb = neighborhoodOfPoint({lat:h.lat,lng:h.lng});
     if(nb) (orphanHousesByBairro[nb.id]=orphanHousesByBairro[nb.id]||[]).push(h);
     else globalOrphanHouses.push(h);
@@ -2891,11 +2926,33 @@ function renderListaPanel(){
     }
     return html;
   }
-  function bairroBlock(id, label, colorDot, streetsHere, orphanHousesHere){
+  function pracaRow(p){
+    var hs = housesForPraca(p);
+    var visibleHs = hs.filter(function(h){ return !hasQuery || houseMatches(h); });
+    var isOpen = hasQuery ? true : expandedRuasInList.has(p.id);
+    var html = '<div class="tree-row tree-row-nested">'+
+      '<button type="button" class="tree-toggle-inner" data-toggle-street="'+p.id+'">'+
+        '<span class="tree-caret">'+(isOpen?"▾":"▸")+'</span>'+
+        '<span class="tree-label grow">'+escapeHtml(p.name)+'</span>'+
+      '</button>'+
+      '<span class="badge badge-praca">Praça</span>'+
+      '<span class="tree-count">'+hs.length+'</span>'+
+      '<button type="button" class="icon-btn" data-locate-praca="'+p.id+'">'+ICON_LOCATE+'</button>'+
+    '</div>';
+    if(isOpen){
+      html += '<div class="tree-children">';
+      html += visibleHs.length ? visibleHs.map(houseRow).join("") : '<div class="empty" style="padding:8px 4px;font-size:13px;">Nenhuma casa cadastrada nessa praça.</div>';
+      html += '</div>';
+    }
+    return html;
+  }
+  function bairroBlock(id, label, colorDot, streetsHere, pracasHere, orphanHousesHere){
     var visibleStreets = streetsHere.filter(function(s){ return !hasQuery || streetMatches(s) || housesForStreet(s).some(houseMatches); });
+    var visiblePracas = pracasHere.filter(function(p){ return !hasQuery || matchesQuery(p.name) || housesForPraca(p).some(houseMatches); });
     var visibleOrphanHouses = orphanHousesHere.filter(function(h){ return !hasQuery || houseMatches(h); });
-    if(hasQuery && !matchesQuery(label) && visibleStreets.length===0 && visibleOrphanHouses.length===0) return "";
-    var totalHouses = streetsHere.reduce(function(sum,s){return sum+housesForStreet(s).length;},0) + orphanHousesHere.length;
+    if(hasQuery && !matchesQuery(label) && visibleStreets.length===0 && visiblePracas.length===0 && visibleOrphanHouses.length===0) return "";
+    var totalHouses = streetsHere.reduce(function(sum,s){return sum+housesForStreet(s).length;},0)
+      + pracasHere.reduce(function(sum,p){return sum+housesForPraca(p).length;},0) + orphanHousesHere.length;
     var isOpen = hasQuery ? true : expandedBairros.has(id);
     var html = '<div class="card tree-bairro">';
     html += '<div class="tree-row">'+
@@ -2904,14 +2961,15 @@ function renderListaPanel(){
         (colorDot?'<span class="tree-dot" style="background:'+colorDot+';"></span>':'')+
         '<span class="tree-label grow">'+escapeHtml(label)+'</span>'+
       '</button>'+
-      '<span class="tree-count">'+streetsHere.length+' ruas · '+totalHouses+' casas</span>'+
+      '<span class="tree-count">'+streetsHere.length+' ruas · '+(pracasHere.length?pracasHere.length+(pracasHere.length===1?' praça · ':' praças · '):'')+totalHouses+' casas</span>'+
     '</div>';
     if(isOpen){
       html += '<div class="tree-children">';
-      if(visibleStreets.length===0 && visibleOrphanHouses.length===0){
+      if(visibleStreets.length===0 && visiblePracas.length===0 && visibleOrphanHouses.length===0){
         html += '<div class="empty" style="padding:12px 4px;">Nada aqui ainda.</div>';
       }
       html += visibleStreets.map(streetRow).join("");
+      html += visiblePracas.map(pracaRow).join("");
       if(orphanHousesHere.length){
         html += '<div class="tree-subtitle">Casas sem rua</div>';
         html += visibleOrphanHouses.map(houseRow).join("");
@@ -2923,12 +2981,12 @@ function renderListaPanel(){
   }
 
   var html = "";
-  neighborhoods.forEach(function(n){
-    html += bairroBlock(n.id, (n.kind==="praca"?"🌳 ":"")+n.name, n.kind==="praca" ? "#22C55E" : (n.color||"var(--bairro)"), streetsByBairro[n.id]||[], orphanHousesByBairro[n.id]||[]);
+  bairrosList.forEach(function(n){
+    html += bairroBlock(n.id, n.name, n.color||"var(--bairro)", streetsByBairro[n.id]||[], pracasByBairro[n.id]||[], orphanHousesByBairro[n.id]||[]);
   });
-  html += bairroBlock("__no_bairro__", "Sem bairro", null, orphanStreets, []);
+  html += bairroBlock("__no_bairro__", "Sem bairro", null, orphanStreets, orphanPracas, []);
   if(globalOrphanHouses.length){
-    html += bairroBlock("__no_house_bairro__", "Casas sem rua vinculada", null, [], globalOrphanHouses);
+    html += bairroBlock("__no_house_bairro__", "Casas sem rua vinculada", null, [], [], globalOrphanHouses);
   }
   if(streets.length===0 && houses.length===0){
     html = '<div class="empty">Nada cadastrado ainda. Use o menu de editar no mapa.</div>';
@@ -2946,6 +3004,13 @@ function renderListaPanel(){
       e.stopPropagation();
       var s = streets.find(function(x){return x.id===b.dataset.locateStreet;});
       if(s){ setTab("mapa"); map.fitBounds(s.points.map(function(p){return [p.lat,p.lng];}), {padding:[60,60]}); }
+    });
+  });
+  document.querySelectorAll("[data-locate-praca]").forEach(function(b){
+    b.addEventListener("click", function(e){
+      e.stopPropagation();
+      var p = neighborhoods.find(function(x){return x.id===b.dataset.locatePraca;});
+      if(p){ setTab("mapa"); map.fitBounds(p.points.map(function(pt){return [pt.lat,pt.lng];}), {padding:[60,60]}); }
     });
   });
   document.querySelectorAll("[data-locate-house]").forEach(function(b){
@@ -3017,8 +3082,9 @@ document.getElementById("btn-set-end").addEventListener("click", function(){
 function populateBairroFilter(){
   var sel = document.getElementById("bairro-filter");
   var current = sel.value;
-  sel.innerHTML = '<option value="">Todos os bairros e praças</option>'+neighborhoods.map(function(n){return '<option value="'+n.id+'">'+(n.kind==="praca"?"🌳 ":"")+escapeHtml(n.name)+'</option>';}).join("");
-  sel.value = neighborhoods.some(function(n){return n.id===current;}) ? current : "";
+  var bairrosOnly = neighborhoods.filter(function(n){return n.kind!=="praca";}); // praça é endereço, não entra como bairro
+  sel.innerHTML = '<option value="">Todos os bairros</option>'+bairrosOnly.map(function(n){return '<option value="'+n.id+'">'+escapeHtml(n.name)+'</option>';}).join("");
+  sel.value = bairrosOnly.some(function(n){return n.id===current;}) ? current : "";
   bairroFilterId = sel.value;
 }
 document.getElementById("bairro-filter").addEventListener("change", function(e){ bairroFilterId = e.target.value; renderRotaChecklist(); });
