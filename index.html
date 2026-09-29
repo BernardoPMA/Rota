@@ -1518,33 +1518,32 @@ function initMap(){
     overlaySyncPending = true;
     requestAnimationFrame(function(){
       overlaySyncPending = false;
-      try{
-        var renderer = null;
-        [streetLayerGroup, routeLineLayer, neighborhoodLayerGroup].some(function(group){
-          group.eachLayer(function(l){ if(!renderer && l._renderer) renderer = l._renderer; });
-          return !!renderer;
-        });
-        if(renderer && typeof renderer._updateTransform==="function"){
-          renderer._updateTransform(map.getCenter(), map.getZoom());
-        }
-      }catch(e){ /* API interna indisponível: sem problema, sincroniza ao soltar o dedo */ }
-      /* Extensão desta mesma correção pros marcadores (casas, rótulos de
-         rua/bairro, bandeiras de início/fim e localização do usuário):
-         eles são divIcon e o esperado é já acompanharem o _move() do
-         pinch sozinhos, mas na prática, durante o gesto rápido de dois
-         dedos no iPhone, ficavam visivelmente atrasados até soltar o
-         dedo. marker.update() é a própria API pública do Leaflet pra
-         reposicionar um marcador já existente (recalcula a projeção
-         atual — com rotação, se houver — e move só o elemento; nunca
-         recria o ícone), então é seguro chamar no mesmo throttle de
-         1 frame pendente usado acima, sem custo extra de rAF. */
-      try{
-        [houseLayerGroup, streetLayerGroup, neighborhoodLayerGroup, endpointLayerGroup].forEach(function(group){
-          group.eachLayer(function(l){ if(l instanceof L.Marker && l.update) l.update(); });
-        });
-        if(userMarker && userMarker.update) userMarker.update();
-      }catch(e){ /* mesma rede de segurança: sincroniza ao soltar o dedo */ }
-      applyZoomTierClass(); // mesma malha de frame, sem custo extra de rAF
+      // Reposicionar CADA marcador (toda casa, nome de rua, bairro...) a cada
+      // frame só é necessário quando o mapa está GIRADO — nesse caso o Leaflet
+      // sozinho não dá conta de acompanhar o pinch direito com o plugin de
+      // rotação. Com o mapa reto (o caso comum, bearing 0), o próprio Leaflet
+      // já reposiciona tudo de graça via CSS, sem precisar tocar em nada aqui
+      // — chamar .update() em centenas de marcadores a cada frame nesse caso
+      // não corrige nada e é o que fazia o zoom travar.
+      if(Math.abs(map.getBearing()) > 0.5){
+        try{
+          var renderer = null;
+          [streetLayerGroup, routeLineLayer, neighborhoodLayerGroup].some(function(group){
+            group.eachLayer(function(l){ if(!renderer && l._renderer) renderer = l._renderer; });
+            return !!renderer;
+          });
+          if(renderer && typeof renderer._updateTransform==="function"){
+            renderer._updateTransform(map.getCenter(), map.getZoom());
+          }
+        }catch(e){ /* API interna indisponível: sem problema, sincroniza ao soltar o dedo */ }
+        try{
+          [houseLayerGroup, streetLayerGroup, neighborhoodLayerGroup, endpointLayerGroup].forEach(function(group){
+            group.eachLayer(function(l){ if(l instanceof L.Marker && l.update) l.update(); });
+          });
+          if(userMarker && userMarker.update) userMarker.update();
+        }catch(e){ /* mesma rede de segurança: sincroniza ao soltar o dedo */ }
+      }
+      applyZoomTierClass(); // barato (só troca de classe se o nível mudou) — roda sempre
     });
   }
   map.on("zoom move", syncOverlayTransform);
