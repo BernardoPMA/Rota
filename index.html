@@ -355,6 +355,10 @@
   #draw-mode-toggle button.active{background:var(--accent); color:var(--accent-ink);}
   /* enquanto arrastando pra desenhar, ninguém quer que o dedo também role/dê zoom na página */
   #map.freehand-drawing{touch-action:none;}
+  /* segurar o dedo no mapa no iPhone abre a lupa/menu do próprio iOS (seleção de texto/imagem);
+     isso desliga, já que o app tem a sua lupa */
+  #map, #map *, #magnifier, #magnifier *{-webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
+  #map img{-webkit-user-drag:none; user-drag:none;}
 
   /* Toast — hierarquia visual por tipo (sucesso/alerta/erro), mantendo o
      mesmo elemento único e a mesma função showToast já existente; o tipo é
@@ -1416,16 +1420,21 @@ function makeBaseLayer(){
   var l;
   if(baseKind==="clean" && CARTO_API_KEY){
     var style = isLight() ? "light_nolabels" : "dark_nolabels";
+    // ATENÇÃO: detectRetina fica DESLIGADO de propósito. Com ele ligado, em tela retina o Leaflet
+    // baixa o maxZoom da camada em 1 e pede tiles um nível mais fundo — então, no zoom máximo
+    // do mapa, a camada já tinha "acabado" e a tela ficava preta. O {r} da URL já entrega tile
+    // @2x (nítido) em tela retina sozinho. Além do maxNativeZoom, o Leaflet só amplia o último tile
+    // (fica um pouco borrado, mas nunca em branco).
     l = L.tileLayer("https://{s}.basemaps.cartocdn.com/"+style+"/{z}/{x}/{y}{r}.png?key="+CARTO_API_KEY, {
-      tileSize:256, zoomOffset:0, detectRetina:true,
-      maxZoom:18, maxNativeZoom:18, // teto mais conservador — 19 ainda mostrava tile em branco em algumas áreas
+      tileSize:256, zoomOffset:0, detectRetina:false,
+      maxZoom:20, maxNativeZoom:19,
       subdomains:"abcd", attribution:"&copy; OpenStreetMap contributors &copy; CARTO"
     });
   } else {
     if(baseKind==="clean" && !CARTO_API_KEY) console.warn("CARTO_API_KEY vazio — usando OSM como reserva até a chave ser configurada.");
     l = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       tileSize:256, zoomOffset:0,
-      maxZoom:18, maxNativeZoom:18, // mesmo teto conservador da camada CARTO, por segurança
+      maxZoom:20, maxNativeZoom:19, // 19 é o último nível que o OSM tem; acima disso o Leaflet só amplia
       subdomains:"abc", attribution:"&copy; OpenStreetMap contributors"
     });
   }
@@ -1463,7 +1472,8 @@ function setBaseKind(kind){
 
 function initMap(){
   map = L.map("map", {
-    zoomControl:false, attributionControl:false, maxZoom:18,
+    zoomControl:false, attributionControl:false, maxZoom:20,
+    zoomSnap:0, // zoom contínuo: o pinch para exatamente onde o dedo soltar (o padrão do Leaflet só aceita níveis inteiros)
     rotate:true, bearing:0, touchRotate:true, rotateControl:false
   }).setView([-23.5505,-46.6333], 16);
 
@@ -2042,10 +2052,11 @@ function ensureMagnifierMap(){
   magnifierMap = L.map("magnifier-inner", {
     zoomControl:false, attributionControl:false, dragging:false, touchZoom:false,
     doubleClickZoom:false, scrollWheelZoom:false, boxZoom:false, keyboard:false,
-    tap:false, fadeAnimation:false, zoomAnimation:false, inertia:false, maxZoom:21
+    tap:false, fadeAnimation:false, zoomAnimation:false, inertia:false, maxZoom:22, zoomSnap:0,
+    rotate:true, bearing:0, touchRotate:false, rotateControl:false // gira junto com o mapa principal (ver showMagnifierAt)
   });
   var lyr = makeBaseLayer(); // mesma fonte de tiles do mapa principal (tema/estilo atual)
-  lyr.options.maxZoom = 21;  // tiles reais só existem até o zoom 18; acima disso o Leaflet amplia o último (maxNativeZoom)
+  lyr.options.maxZoom = 22;  // acima do último nível real de tiles o Leaflet só amplia (maxNativeZoom)
   lyr.addTo(magnifierMap);
   return magnifierMap;
 }
@@ -2059,8 +2070,10 @@ function showMagnifierAt(clientX, clientY){
   el.classList.add("show");
   var mm = ensureMagnifierMap();
   if(wasHidden) mm.invalidateSize();
+  var br = map.getBearing();
+  if(Math.abs((mm.getBearing()||0) - br) > 0.01) mm.setBearing(br); // mesma rotação do mapa principal
   var ll = containerPointToLatLng(clientX, clientY); // o centro da lupa é SEMPRE o ponto exato sob o dedo
-  mm.setView(ll, Math.min(map.getZoom()+2, 21), {animate:false});
+  mm.setView(ll, Math.min(map.getZoom()+1, 22), {animate:false}); // +1 = 2x (antes era 4x, perto demais)
 }
 function hideMagnifier(){ document.getElementById("magnifier").classList.remove("show"); }
 function commitPlacement(pt){
@@ -2111,6 +2124,7 @@ function onPlacePointerUp(e){
   mapEl.addEventListener("pointermove", onFreehandPointerMove);
   window.addEventListener("pointerup", onFreehandPointerUp);
   window.addEventListener("pointercancel", onFreehandPointerUp);
+  mapEl.addEventListener("contextmenu", function(e){ e.preventDefault(); }); // sem menu de "segurar" no mapa
   mapEl.addEventListener("pointerdown", onPlacePointerDown);
   mapEl.addEventListener("pointermove", onPlacePointerMove);
   window.addEventListener("pointerup", onPlacePointerUp);
